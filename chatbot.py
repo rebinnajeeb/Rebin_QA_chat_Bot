@@ -1,0 +1,107 @@
+from dotenv import load_dotenv
+import streamlit as st
+from langchain_groq import ChatGroq
+
+# ---------- LOAD ENV ----------
+load_dotenv()
+
+# ---------- PAGE CONFIG ----------
+st.set_page_config(
+    page_title="Rebin's Chatbot",
+    page_icon="🤖",
+    layout="centered"
+)
+
+# ---------- CUSTOM CSS ----------
+st.markdown("""
+    <style>
+    body {
+        background-color: #0e1117;
+    }
+    .title {
+        text-align: center;
+        font-size: 38px;
+        font-weight: bold;
+        margin-bottom: 5px;
+    }
+    .subtitle {
+        text-align: center;
+        color: gray;
+        margin-bottom: 20px;
+    }
+    .user-msg {
+        background-color: #1f2937;
+        padding: 10px;
+        border-radius: 10px;
+        margin: 10px 0;
+        text-align: right;
+        color: white;
+    }
+    .bot-msg {
+        background-color: #111827;
+        padding: 10px;
+        border-radius: 10px;
+        margin: 10px 0;
+        color: #e5e7eb;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# ---------- TITLE ----------
+st.markdown("<div class='title'>🤖 Rebin's Chatbot</div>", unsafe_allow_html=True)
+st.markdown("<div class='subtitle'>Ask anything... I'm here to help 🚀</div>", unsafe_allow_html=True)
+
+st.divider()
+
+# ---------- CHAT HISTORY ----------
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+
+# ---------- DISPLAY CHAT ----------
+chat_container = st.container()
+
+with chat_container:
+    for message in st.session_state.chat_history:
+        if message["role"] == "user":
+            st.markdown(f"<div class='user-msg'>👤 {message['content']}</div>", unsafe_allow_html=True)
+        else:
+            st.markdown(f"<div class='bot-msg'>🤖 {message['content']}</div>", unsafe_allow_html=True)
+
+# ---------- LLM ----------
+llm = ChatGroq(
+    model="llama-3.3-70b-versatile",
+    temperature=0.3,
+)
+
+# ---------- INPUT ----------
+user_prompt = st.chat_input("Type your message...")
+
+if user_prompt:
+    # save user message
+    st.session_state.chat_history.append({
+        "role": "user",
+        "content": user_prompt
+    })
+
+    # show user message instantly
+    st.markdown(f"<div class='user-msg'>👤 {user_prompt}</div>", unsafe_allow_html=True)
+
+    # loader
+    with st.spinner("Thinking... 🤔"):
+        response = llm.invoke(
+            input=[
+                {"role": "system", "content": "You are a helpful assistant"},
+                *st.session_state.chat_history
+            ]
+        )
+
+    assistant_response = response.content
+
+    # save bot response
+    st.session_state.chat_history.append({
+        "role": "assistant",
+        "content": assistant_response
+    })
+
+    # show bot response
+    st.markdown(f"<div class='bot-msg'>🤖 {assistant_response}</div>", unsafe_allow_html=True)

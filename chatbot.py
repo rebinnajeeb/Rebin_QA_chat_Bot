@@ -18,7 +18,7 @@ if not GROQ_KEY:
 
 # ---------- PAGE CONFIG ----------
 st.set_page_config(
-    page_title="Rebin's QA Test Assistant Bot",
+    page_title="QA Test Assistant",
     page_icon="🧪",
     layout="wide"
 )
@@ -64,7 +64,7 @@ st.markdown("""
 
 st.markdown("""
 <div class="main-header">
-    <h1>🧪 Rebin's QA Test Assistant Bot</h1>
+    <h1>🧪 QA Test Assistant</h1>
     <p>AI-Powered Test Case Generator | Selenium Code | Coverage Analyzer</p>
 </div>
 """, unsafe_allow_html=True)
@@ -344,10 +344,10 @@ Feature: {feature_name}
 Requirement / Acceptance Criteria:
 {ac_text}
 
-MANDATORY RULE — EVERY SINGLE TEST CASE must start with \
-these EXACT 7 login steps (copy them word for word):
+MANDATORY RULE — EVERY SINGLE TEST CASE must follow \
+this EXACT 3-part structure:
 
-MANDATORY STEPS (same for ALL test cases):
+PART 1 — MANDATORY LOGIN STEPS (same for ALL test cases):
 Launch the following url "https://t1-aeg-qa-a.eluxmkt.com/der/de/b2b/pre-login/" | User should be able to launch the url
 User should be able to Partner link from the portal | User is able to Click on the partner link
 User should be able to Redirected to "Prelogin page" after clicking on the partner link from the portal | User is able to View the "Prelogin page"
@@ -356,40 +356,78 @@ User should be able to "Login now" from prelogin page. | User is able to Click o
 User should be able to Redirected to "SAML login page" when clicking on "Login now" from prelogin page | User is able to User should be redirected to SAML login page
 User should be able to redirect to the Chiron page after the successful login credentials (Chiron user credentials) | User is able to View the login page
 
-AFTER the 7 mandatory steps — add SPECIFIC steps \
-for that test case based on AC.
+PART 2 — NAVIGATION STEPS (minimum 3-5 steps to REACH the feature):
+CRITICAL: DO NOT jump directly from login to verification!
+Add ALL intermediate steps like:
+- Navigate to correct menu or module
+- Click on correct submenu item
+- Navigate to the specific page
+- Scroll to the relevant section if needed
+- Perform any prerequisite actions
+  (example: add product to cart, add to wishlist, select category)
+- Wait for page to load
+- Verify page is loaded correctly
 
-STRICT LANGUAGE RULES FOR SPECIFIC STEPS:
-POSITIVE:
+PART 3 — VERIFICATION STEP (always the LAST step):
+POSITIVE: "User should be able to view/see/verify [feature]"
+        | "User is able to view/see/verify [feature]"
+NEGATIVE: "User should not be able to view/see [feature]"
+        | "User is not able to view/see [feature]"
+
+STRICT LANGUAGE RULES:
+POSITIVE steps:
 - Column 2 MUST start with: "User should be able to..."
 - Column 3 MUST start with: "User is able to..."
-NEGATIVE:
+NEGATIVE steps:
 - Column 2 MUST start with: "User should not be able to..."
 - Column 3 MUST start with: "User is not able to..."
 
+GOOD EXAMPLE (follow exactly):
+Test Case Title: Verify whether user is able to view PLP Reset message in header
+Launch the following url "https://t1-aeg-qa-a.eluxmkt.com/der/de/b2b/pre-login/" | User should be able to launch the url
+User should be able to Partner link from the portal | User is able to Click on the partner link
+User should be able to Redirected to "Prelogin page" after clicking on the partner link from the portal | User is able to View the "Prelogin page"
+User should be able to Able to see "Login now", "Contact us" Buttons | User is able to View the "Login now", "Contact us" Buttons
+User should be able to "Login now" from prelogin page. | User is able to Click on the login now button
+User should be able to Redirected to "SAML login page" when clicking on "Login now" from prelogin page | User is able to User should be redirected to SAML login page
+User should be able to redirect to the Chiron page after the successful login credentials (Chiron user credentials) | User is able to View the login page
+User should be able to Navigate to the Sales and Marketing module | User is able to Navigate to the Sales and Marketing module
+User should be able to Click on Premier Line Sub-menu under Sales and Marketing | User is able to Click on Premier Line Sub-menu under Sales and Marketing
+User should be able to Navigate to the PLP page | User is able to Navigate to the PLP page
+User should be able to scroll to the header section of the PLP page | User is able to scroll to the header section of the PLP page
+User should be able to view PLP Reset message in header | User is able to view PLP Reset message in header
+
+BAD EXAMPLE (NEVER do this):
+Test Case Title: Verify whether user is able to view PLP Reset message in header
+[7 mandatory login steps]
+User should be able to view PLP Reset message in header | User is able to view PLP Reset message in header
+❌ WRONG — missing navigation steps!
+
 Generate minimum 6-8 test cases (mix positive and negative).
 
-YOUR RESPONSE FORMAT — VERY IMPORTANT:
-First show ONLY test case titles like this:
+RESPONSE FORMAT:
+First show ONLY titles in chat:
 
 ✅ Generated Test Cases:
-1. Verify whether user is able to [title]
-2. Verify whether user is not able to [title]
-... and so on
+1. Verify whether user is able to...
+2. Verify whether user is not able to...
 
-DO NOT show steps in chat. Steps go ONLY in CSV below.
+DO NOT show steps in chat. Steps ONLY in CSV.
 
-Then provide FULL details in CSV:
+Then full details in CSV:
 ---CSV START---
 Test Case Title,Steps to Reproduce,Expected Result
 ---CSV END---
 
 CSV Rules:
-- Same Test Case Title repeats for every step row
-- All 7 mandatory steps included for every TC
+- Same title repeats for every step row of that TC
+- PART 1: All 7 mandatory login steps
+- PART 2: Minimum 3-5 navigation steps
+- PART 3: Final verification step only
+- Never jump from login directly to verification!
 - Positive: "User should be able to..." | "User is able to..."
 - Negative: "User should not be able to..." | "User is not able to..."
-- Full details ONLY in CSV not in chat"""
+- No extra commas inside cell text"""
 
 
 def get_selenium_prompt(
@@ -424,8 +462,9 @@ Identify ALL UI elements:
 - Labels, text, error messages
 - Navigation items, links, menus
 
-MANDATORY RULE — EVERY test case must start with \
-these EXACT 7 login steps:
+MANDATORY RULE — EVERY test case must follow 3-part structure:
+
+PART 1 — These EXACT 7 login steps:
 Launch the following url "https://t1-aeg-qa-a.eluxmkt.com/der/de/b2b/pre-login/" | User should be able to launch the url
 User should be able to Partner link from the portal | User is able to Click on the partner link
 User should be able to Redirected to "Prelogin page" after clicking on the partner link from the portal | User is able to View the "Prelogin page"
@@ -434,7 +473,9 @@ User should be able to "Login now" from prelogin page. | User is able to Click o
 User should be able to Redirected to "SAML login page" when clicking on "Login now" from prelogin page | User is able to User should be redirected to SAML login page
 User should be able to redirect to the Chiron page after the successful login credentials (Chiron user credentials) | User is able to View the login page
 
-Then add specific steps for each test case.
+PART 2 — Minimum 3-5 navigation steps to reach the feature
+PART 3 — Final verification step
+
 POSITIVE: "User should be able to..." | "User is able to..."
 NEGATIVE: "User should not be able to..." | "User is not able to..."
 
@@ -791,11 +832,18 @@ def handle_action(
         messages = [
             {"role": "system", "content": (
                 "You are an expert Technical Test Lead. "
-                "In chat response show ONLY test case titles "
-                "as a numbered list — no steps in chat. "
-                "Put ALL full step details ONLY in CSV section. "
-                "EVERY test case MUST have 7 mandatory login "
-                "steps in CSV first, then specific steps. "
+                "CRITICAL RULE: Never jump directly from "
+                "login steps to verification step. "
+                "ALWAYS add minimum 3-5 navigation steps "
+                "between login and verification like: "
+                "navigate to module, click submenu, "
+                "go to specific page, scroll to section, "
+                "perform prerequisite actions. "
+                "Structure = 7 login steps + "
+                "3-5 navigation steps + "
+                "1 final verification step. "
+                "Show ONLY titles in chat response. "
+                "Full details in CSV ONLY. "
                 "POSITIVE: 'User should be able to' / "
                 "'User is able to'. "
                 "NEGATIVE: 'User should not be able to' / "
@@ -829,7 +877,7 @@ def handle_action(
                 ))
                 st.success(
                     f"✅ {len(unique_titles)} test cases generated! "
-                    f"Full steps + expected in CSV below."
+                    f"Full steps in CSV below."
                 )
                 st.download_button(
                     label=(
@@ -917,9 +965,11 @@ def handle_action(
         messages = [
             {"role": "system", "content": (
                 "You are an expert QA Engineer. "
-                "Show ONLY titles in chat response. "
+                "Show ONLY titles in chat. "
                 "Full steps ONLY in CSV. "
-                "EVERY TC starts with 7 mandatory login steps. "
+                "Structure = 7 login + 3-5 navigation + "
+                "1 verification step. "
+                "Never jump directly from login to verification! "
                 "POSITIVE: 'User should be able to' / "
                 "'User is able to'. "
                 "NEGATIVE: 'User should not be able to' / "

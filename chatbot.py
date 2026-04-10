@@ -1,6 +1,7 @@
 from dotenv import load_dotenv
 import streamlit as st
 from langchain_groq import ChatGroq
+import PyPDF2
 
 # ---------- LOAD ENV ----------
 load_dotenv()
@@ -15,9 +16,6 @@ st.set_page_config(
 # ---------- CUSTOM CSS ----------
 st.markdown("""
     <style>
-    body {
-        background-color: #0e1117;
-    }
     .title {
         text-align: center;
         font-size: 38px;
@@ -57,15 +55,35 @@ st.divider()
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
-# ---------- DISPLAY CHAT ----------
-chat_container = st.container()
+# ---------- FILE UPLOAD ----------
+uploaded_file = st.file_uploader("📄 Upload a file (txt or pdf)", type=["txt", "pdf"])
 
-with chat_container:
-    for message in st.session_state.chat_history:
-        if message["role"] == "user":
-            st.markdown(f"<div class='user-msg'>👤 {message['content']}</div>", unsafe_allow_html=True)
-        else:
-            st.markdown(f"<div class='bot-msg'>🤖 {message['content']}</div>", unsafe_allow_html=True)
+# ---------- HANDLE FILE ----------
+if uploaded_file and "file_added" not in st.session_state:
+    file_text = ""
+
+    if uploaded_file.type == "text/plain":
+        file_text = uploaded_file.read().decode("utf-8")
+
+    elif uploaded_file.type == "application/pdf":
+        pdf_reader = PyPDF2.PdfReader(uploaded_file)
+        for page in pdf_reader.pages:
+            file_text += page.extract_text()
+
+    # ✅ ADD FILE INTO CHAT HISTORY (ONLY ONCE)
+    st.session_state.chat_history.append({
+        "role": "user",
+        "content": f"[FILE UPLOADED]\n{file_text}"
+    })
+
+    st.session_state.file_added = True
+
+# ---------- DISPLAY CHAT ----------
+for message in st.session_state.chat_history:
+    if message["role"] == "user":
+        st.markdown(f"<div class='user-msg'>👤 {message['content']}</div>", unsafe_allow_html=True)
+    else:
+        st.markdown(f"<div class='bot-msg'>🤖 {message['content']}</div>", unsafe_allow_html=True)
 
 # ---------- LLM ----------
 llm = ChatGroq(
@@ -83,17 +101,17 @@ if user_prompt:
         "content": user_prompt
     })
 
-    # show user message instantly
     st.markdown(f"<div class='user-msg'>👤 {user_prompt}</div>", unsafe_allow_html=True)
+
+    # prepare messages
+    messages = [
+        {"role": "system", "content": "You are a helpful assistant"},
+        *st.session_state.chat_history
+    ]
 
     # loader
     with st.spinner("Thinking... 🤔"):
-        response = llm.invoke(
-            input=[
-                {"role": "system", "content": "You are a helpful assistant"},
-                *st.session_state.chat_history
-            ]
-        )
+        response = llm.invoke(messages)
 
     assistant_response = response.content
 
@@ -103,5 +121,4 @@ if user_prompt:
         "content": assistant_response
     })
 
-    # show bot response
     st.markdown(f"<div class='bot-msg'>🤖 {assistant_response}</div>", unsafe_allow_html=True)

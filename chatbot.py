@@ -1031,13 +1031,12 @@ def handle_action(
         st.session_state.chat_history.append(
             {"role": "assistant", "content": reply})
 
-    # ---- ANALYZE SCREENSHOT ----
+    # ---- ANALYZE SCREENSHOT (TWO-STEP FIX) ----
     elif action_type == "analyze_screenshot":
         if not st.session_state.images:
             st.warning(
                 "⚠️ Upload a screenshot from sidebar first!")
             return
-        prompt = get_screenshot_tc_prompt()
         user_msg = (
             "**🖼️ Analyze Screenshot — Generate Test Cases**"
         )
@@ -1045,40 +1044,74 @@ def handle_action(
             st.markdown(user_msg)
         st.session_state.chat_history.append(
             {"role": "user", "content": user_msg})
-        messages = [
-            {"role": "system", "content": (
-                "You are an expert QA Engineer and Technical "
-                "Test Lead. "
-                "In chat response show ONLY test case titles "
-                "as a numbered list — no steps in chat. "
-                "Put ALL full step details ONLY in CSV section. "
-                "EVERY test case MUST have 7 mandatory login "
-                "steps in CSV first, THEN 2-3 intermediate "
-                "navigation/interaction steps (like navigating "
-                "to the page shown in screenshot, selecting "
-                "elements, clicking on sections visible in the "
-                "screenshot), and THEN the final verification "
-                "step. "
-                "NEVER jump directly from login step 7 to the "
-                "verification step — there MUST be navigation "
-                "steps in between. "
-                "The CSV MUST be properly formatted with "
-                "exactly 3 columns separated by commas. "
-                "Use double quotes around fields containing commas. "
-                "POSITIVE: 'User should be able to' / "
-                "'User is able to'. "
-                "NEGATIVE: 'User should not be able to' / "
-                "'User is not able to'."
-            )},
-            {"role": "user", "content": prompt}
-        ]
+
         with st.chat_message("assistant"):
-            with st.spinner("🔍 Analyzing screenshot..."):
-                reply = call_groq(
-                    messages,
+            # STEP 1: Vision model ONLY describes UI elements
+            with st.spinner(
+                    "🔍 Step 1/2: Analyzing screenshot..."):
+                vision_messages = [
+                    {"role": "system", "content": (
+                        "You are an expert UI analyst. "
+                        "Describe every UI element you see "
+                        "in the screenshot in detail. "
+                        "List every button, field, link, "
+                        "label, dropdown, checkbox, table, "
+                        "image, tab, heading, and text. "
+                        "Also describe the page layout and "
+                        "what actions a user can perform."
+                    )},
+                    {"role": "user", "content": (
+                        "Analyze this UI screenshot carefully "
+                        "and list ALL UI elements you can see. "
+                        "Be extremely detailed and thorough."
+                    )}
+                ]
+                ui_description = call_groq(
+                    vision_messages,
                     images=st.session_state.images
                 )
-            screenshot_ac = ac_text if ac_text.strip() else "Screenshot Analysis"
+
+            if ui_description.startswith("❌"):
+                st.error(ui_description)
+                st.session_state.chat_history.append(
+                    {"role": "assistant",
+                     "content": ui_description})
+                return
+
+            # STEP 2: Text model generates proper CSV
+            # Uses get_testcase_prompt — same as Test Cases button
+            with st.spinner(
+                    "📋 Step 2/2: Generating test cases..."):
+                tc_prompt = get_testcase_prompt(
+                    ui_description, feature)
+                tc_messages = [
+                    {"role": "system", "content": (
+                        "You are an expert Technical Test Lead. "
+                        "In chat response show ONLY test case "
+                        "titles as a numbered list — no steps "
+                        "in chat. "
+                        "Put ALL full step details ONLY in CSV "
+                        "section. "
+                        "EVERY test case MUST have 7 mandatory "
+                        "login steps in CSV first, THEN 2-3 "
+                        "intermediate navigation/interaction "
+                        "steps, and THEN the final verification "
+                        "step. "
+                        "NEVER jump directly from login step 7 "
+                        "to the verification step — there MUST "
+                        "be navigation steps in between. "
+                        "POSITIVE: 'User should be able to' / "
+                        "'User is able to'. "
+                        "NEGATIVE: 'User should not be able to' "
+                        "/ 'User is not able to'."
+                    )},
+                    {"role": "user", "content": tc_prompt}
+                ]
+                # NO images = uses text model = proper CSV
+                reply = call_groq(tc_messages)
+
+            screenshot_ac = (ac_text if ac_text.strip()
+                             else ui_description)
             display_text = process_and_display_test_cases(
                 reply,
                 f"{feature} (Screenshot)",

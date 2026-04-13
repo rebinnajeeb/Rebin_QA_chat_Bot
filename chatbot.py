@@ -18,7 +18,7 @@ if not GROQ_KEY:
 
 # ---------- PAGE CONFIG ----------
 st.set_page_config(
-    page_title="Rebin's QA Test Assistant Bot",
+    page_title="QA Test Assistant",
     page_icon="🧪",
     layout="wide"
 )
@@ -64,7 +64,7 @@ st.markdown("""
 
 st.markdown("""
 <div class="main-header">
-    <h1>🧪 Rebin's QA Test Assistant Bot</h1>
+    <h1>🧪 QA Test Assistant</h1>
     <p>AI-Powered Test Case Generator | Selenium Code | Coverage Analyzer</p>
 </div>
 """, unsafe_allow_html=True)
@@ -333,6 +333,41 @@ def show_dashboard(data: dict, feature: str):
 # ===============================
 # 📋 PROMPT TEMPLATES
 # ===============================
+
+# ---------------------------------------------------------------
+# FIX #1 — INTERMEDIATE NAVIGATION STEPS INSTRUCTION
+# This block is injected into BOTH the AC-based and screenshot-based
+# prompts so the LLM always generates 2-3 navigation / interaction
+# steps between the 7 mandatory login steps and the final
+# verification step.
+# ---------------------------------------------------------------
+INTERMEDIATE_STEPS_INSTRUCTION = """
+CRITICAL RULE — INTERMEDIATE NAVIGATION STEPS:
+After the 7 mandatory login steps and BEFORE the final verification/
+assertion step, you MUST add 2-3 intermediate navigation and
+interaction steps that describe HOW the user reaches the feature
+being tested.
+
+These intermediate steps should cover actions like:
+- Navigating to the correct page (e.g., "User should be able to navigate to the PLP page from the main menu")
+- Selecting a category or subcategory (e.g., "User should be able to select the product subcategory from the navigation")
+- Performing a search or filter (e.g., "User should be able to search for a specific product in the search bar")
+- Clicking on a specific section or tab (e.g., "User should be able to click on the 'Alternative Products' tab")
+- Scrolling or locating a UI element (e.g., "User should be able to scroll to the product grid section")
+- Selecting a product or item (e.g., "User should be able to select an alternative product from the list")
+
+EXAMPLE of correct step flow for a test case:
+  Step 1-7: [mandatory login steps]
+  Step 8:  User should be able to navigate to the Product Listing Page (PLP) | User is able to view the PLP page
+  Step 9:  User should be able to select a product category from the left navigation menu | User is able to view products under the selected category
+  Step 10: User should be able to click on an alternative product from the product grid | User is able to view the alternative product details
+  Step 11: User should be able to view the PLP Reset message in the header | User is able to see the info message bar above the product grid
+
+DO NOT jump directly from Step 7 (login) to the verification step.
+There MUST be at least 2-3 navigation/interaction steps in between.
+"""
+
+
 def get_testcase_prompt(
         ac_text: str,
         feature_name: str = "Feature") -> str:
@@ -356,8 +391,9 @@ User should be able to "Login now" from prelogin page. | User is able to Click o
 User should be able to Redirected to "SAML login page" when clicking on "Login now" from prelogin page | User is able to User should be redirected to SAML login page
 User should be able to redirect to the Chiron page after the successful login credentials (Chiron user credentials) | User is able to View the login page
 
-AFTER the 7 mandatory steps — add SPECIFIC steps \
-for that test case based on AC.
+{INTERMEDIATE_STEPS_INSTRUCTION}
+
+AFTER the 7 mandatory steps AND the 2-3 intermediate navigation steps — add the FINAL verification/assertion step for that test case based on AC.
 
 STRICT LANGUAGE RULES FOR SPECIFIC STEPS:
 POSITIVE:
@@ -387,6 +423,8 @@ Test Case Title,Steps to Reproduce,Expected Result
 CSV Rules:
 - Same Test Case Title repeats for every step row
 - All 7 mandatory steps included for every TC
+- Then 2-3 intermediate navigation steps
+- Then the final verification step
 - Positive: "User should be able to..." | "User is able to..."
 - Negative: "User should not be able to..." | "User is not able to..."
 - Full details ONLY in CSV not in chat"""
@@ -416,7 +454,7 @@ Generate:
 
 
 def get_screenshot_tc_prompt() -> str:
-    return """Act as a Technical Test Lead. \
+    return f"""Act as a Technical Test Lead. \
 Analyze this UI screenshot carefully.
 
 Identify ALL UI elements:
@@ -434,16 +472,38 @@ User should be able to "Login now" from prelogin page. | User is able to Click o
 User should be able to Redirected to "SAML login page" when clicking on "Login now" from prelogin page | User is able to User should be redirected to SAML login page
 User should be able to redirect to the Chiron page after the successful login credentials (Chiron user credentials) | User is able to View the login page
 
-Then add specific steps for each test case.
+{INTERMEDIATE_STEPS_INSTRUCTION}
+
+After the 7 mandatory login steps AND the 2-3 intermediate navigation steps, add the FINAL verification/assertion step.
+
 POSITIVE: "User should be able to..." | "User is able to..."
 NEGATIVE: "User should not be able to..." | "User is not able to..."
 
-Show ONLY titles in response.
-Full steps ONLY in CSV.
+Generate minimum 6-8 test cases (mix positive and negative) based on UI elements visible in the screenshot.
 
+YOUR RESPONSE FORMAT — VERY IMPORTANT:
+First show ONLY test case titles like this:
+
+✅ Generated Test Cases:
+1. Verify whether user is able to [title]
+2. Verify whether user is not able to [title]
+... and so on
+
+DO NOT show steps in chat. Steps go ONLY in CSV below.
+
+Then provide FULL details in CSV:
 ---CSV START---
 Test Case Title,Steps to Reproduce,Expected Result
----CSV END---"""
+---CSV END---
+
+CSV Rules:
+- Same Test Case Title repeats for every step row
+- All 7 mandatory steps included for every TC
+- Then 2-3 intermediate navigation steps based on what you see in the screenshot
+- Then the final verification step
+- Positive: "User should be able to..." | "User is able to..."
+- Negative: "User should not be able to..." | "User is not able to..."
+- Full details ONLY in CSV not in chat"""
 
 
 def get_bdd_prompt(ac_text: str) -> str:
@@ -795,7 +855,13 @@ def handle_action(
                 "as a numbered list — no steps in chat. "
                 "Put ALL full step details ONLY in CSV section. "
                 "EVERY test case MUST have 7 mandatory login "
-                "steps in CSV first, then specific steps. "
+                "steps in CSV first, THEN 2-3 intermediate "
+                "navigation/interaction steps (like navigating "
+                "to PLP page, selecting category, clicking on "
+                "a section), and THEN the final verification step. "
+                "NEVER jump directly from login step 7 to the "
+                "verification step — there MUST be navigation "
+                "steps in between. "
                 "POSITIVE: 'User should be able to' / "
                 "'User is able to'. "
                 "NEGATIVE: 'User should not be able to' / "
@@ -901,6 +967,8 @@ def handle_action(
             {"role": "assistant", "content": reply})
 
     # ---- ANALYZE SCREENSHOT ----
+    # FIX #2 & #3: Screenshot now gets same CSV format,
+    # dashboard, and shows only titles first
     elif action_type == "analyze_screenshot":
         if not st.session_state.images:
             st.warning(
@@ -916,10 +984,21 @@ def handle_action(
             {"role": "user", "content": user_msg})
         messages = [
             {"role": "system", "content": (
-                "You are an expert QA Engineer. "
-                "Show ONLY titles in chat response. "
-                "Full steps ONLY in CSV. "
-                "EVERY TC starts with 7 mandatory login steps. "
+                "You are an expert QA Engineer and Technical "
+                "Test Lead. "
+                "In chat response show ONLY test case titles "
+                "as a numbered list — no steps in chat. "
+                "Put ALL full step details ONLY in CSV section. "
+                "EVERY test case MUST have 7 mandatory login "
+                "steps in CSV first, THEN 2-3 intermediate "
+                "navigation/interaction steps (like navigating "
+                "to the page shown in screenshot, selecting "
+                "elements, clicking on sections visible in the "
+                "screenshot), and THEN the final verification "
+                "step. "
+                "NEVER jump directly from login step 7 to the "
+                "verification step — there MUST be navigation "
+                "steps in between. "
                 "POSITIVE: 'User should be able to' / "
                 "'User is able to'. "
                 "NEGATIVE: 'User should not be able to' / "
@@ -933,14 +1012,22 @@ def handle_action(
                     messages,
                     images=st.session_state.images
                 )
+
+            # FIX #3: Show ONLY verification titles first
             display_text = reply
             if "---CSV START---" in reply:
                 display_text = reply.split(
                     "---CSV START---")[0].strip()
             st.markdown(display_text)
+
+            # FIX #2: Same CSV download + dashboard as
+            # generate_tc action
             parsed = parse_test_cases_to_list(reply)
             if parsed:
                 st.session_state.last_test_cases = parsed
+                st.session_state.last_ac = (
+                    "Screenshot Analysis"
+                )
                 csv_data = generate_csv(parsed)
                 unique_titles = list(dict.fromkeys(
                     tc["Test Case Title"]
@@ -948,21 +1035,42 @@ def handle_action(
                     if tc.get("Test Case Title")
                 ))
                 st.success(
-                    f"✅ {len(unique_titles)} test cases! "
-                    f"Download CSV for full details."
+                    f"✅ {len(unique_titles)} test cases "
+                    f"generated from screenshot! "
+                    f"Full steps + expected in CSV below."
                 )
                 st.download_button(
                     label=(
-                        f"📊 Download CSV "
-                        f"({len(unique_titles)} TCs)"
+                        f"📊 Download Excel CSV "
+                        f"({len(unique_titles)} TCs, "
+                        f"{len(parsed)} rows)"
                     ),
                     data=csv_data,
+                    file_name=(
+                        f"{feature.replace(' ', '_')}"
+                        f"_screenshot_test_cases.csv"
+                    ),
+                    mime="text/csv"
+                )
+                # FIX #2: Show dashboard same as generate_tc
+                dash = compute_dashboard(
+                    parsed, f"{feature} (Screenshot)")
+                st.session_state.dashboard_data = (
+                    dash, f"{feature} (Screenshot)")
+                show_dashboard(
+                    dash, f"{feature} (Screenshot)")
+            else:
+                st.warning(
+                    "⚠️ Could not parse structured test cases "
+                    "from response. Downloading raw output."
+                )
+                st.download_button(
+                    label="📊 Download Raw CSV",
+                    data=reply.encode("utf-8"),
                     file_name="screenshot_test_cases.csv",
                     mime="text/csv"
                 )
-                dash = compute_dashboard(
-                    parsed, "Screenshot Analysis")
-                show_dashboard(dash, "Screenshot Analysis")
+
         st.session_state.chat_history.append(
             {"role": "assistant", "content": display_text})
 

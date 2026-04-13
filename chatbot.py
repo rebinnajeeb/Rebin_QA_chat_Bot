@@ -84,6 +84,12 @@ if "last_ac" not in st.session_state:
     st.session_state.last_ac = ""
 if "dashboard_data" not in st.session_state:
     st.session_state.dashboard_data = None
+if "last_reply" not in st.session_state:
+    st.session_state.last_reply = ""
+if "last_feature" not in st.session_state:
+    st.session_state.last_feature = ""
+if "last_file_prefix" not in st.session_state:
+    st.session_state.last_file_prefix = ""
 
 
 # ===============================
@@ -800,6 +806,9 @@ if st.sidebar.button(
     st.session_state.last_test_cases = []
     st.session_state.last_ac = ""
     st.session_state.dashboard_data = None
+    st.session_state.last_reply = ""
+    st.session_state.last_feature = ""
+    st.session_state.last_file_prefix = ""
     st.rerun()
 
 
@@ -885,6 +894,11 @@ for msg in st.session_state.chat_history:
 def process_and_display_test_cases(reply: str, feature: str,
                                    ac_text: str,
                                    file_prefix: str = ""):
+    # Save to session state so it persists on rerun
+    st.session_state.last_reply = reply
+    st.session_state.last_feature = feature
+    st.session_state.last_file_prefix = file_prefix
+
     display_text = extract_display_text(reply)
     st.markdown(display_text)
 
@@ -1079,7 +1093,6 @@ def handle_action(
                 return
 
             # STEP 2: Text model generates proper CSV
-            # Uses get_testcase_prompt — same as Test Cases button
             with st.spinner(
                     "📋 Step 2/2: Generating test cases..."):
                 tc_prompt = get_testcase_prompt(
@@ -1107,8 +1120,28 @@ def handle_action(
                     )},
                     {"role": "user", "content": tc_prompt}
                 ]
-                # NO images = uses text model = proper CSV
-                reply = call_groq(tc_messages)
+                # Higher token limit for screenshot CSV
+                try:
+                    headers = {
+                        "Authorization": f"Bearer {GROQ_KEY}",
+                        "Content-Type": "application/json",
+                    }
+                    payload = {
+                        "model": "llama-3.3-70b-versatile",
+                        "messages": tc_messages,
+                        "max_tokens": 8192,
+                        "temperature": 0.3,
+                    }
+                    resp = requests.post(
+                        "https://api.groq.com/openai/v1/chat/completions",
+                        headers=headers, json=payload,
+                        timeout=120,
+                    )
+                    resp.raise_for_status()
+                    reply = resp.json(
+                    )["choices"][0]["message"]["content"]
+                except Exception as e:
+                    reply = f"❌ Error: {str(e)}"
 
             screenshot_ac = (ac_text if ac_text.strip()
                              else ui_description)
@@ -1231,6 +1264,53 @@ if sidebar_action == "generate_bdd":
 if sidebar_action == "summary_report":
     handle_action(
         "summary_report", ac_input, feature_name or "Feature")
+
+
+# ===============================
+# 🔄 PERSIST RESULTS ON RERUN
+# ===============================
+if (st.session_state.last_test_cases
+        and st.session_state.last_reply
+        and not any([btn_tc, btn_selenium, btn_bdd,
+                     btn_screenshot, btn_summary,
+                     sidebar_action])):
+    feature = st.session_state.last_feature
+    parsed = st.session_state.last_test_cases
+    ac_text = st.session_state.last_ac
+
+    display_text = extract_display_text(
+        st.session_state.last_reply)
+    if display_text:
+        with st.chat_message("assistant"):
+            st.markdown(display_text)
+
+            csv_data = generate_csv(parsed)
+            unique_titles = list(dict.fromkeys(
+                tc["Test Case Title"]
+                for tc in parsed
+                if tc.get("Test Case Title")
+            ))
+            st.success(
+                f"✅ {len(unique_titles)} test cases generated! "
+                f"Full steps + expected in CSV below."
+            )
+            fname = feature.replace(' ', '_')
+            if st.session_state.last_file_prefix:
+                fname = (f"{fname}_"
+                         f"{st.session_state.last_file_prefix}")
+            st.download_button(
+                label=(
+                    f"📊 Download Excel CSV "
+                    f"({len(unique_titles)} TCs, "
+                    f"{len(parsed)} rows)"
+                ),
+                data=csv_data,
+                file_name=f"{fname}_test_cases.csv",
+                mime="text/csv",
+                key="persist_download"
+            )
+            dash = compute_dashboard(parsed, ac_text)
+            show_dashboard(dash, feature)
 
 
 # ===============================

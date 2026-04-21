@@ -876,9 +876,13 @@ with col2:
 st.divider()
 st.markdown("### 💬 Results")
 
-for msg in st.session_state.chat_history:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
+# ✅ KEY FIX — only show history when NO button is clicked
+# prevents double display when button is clicked
+if not any([btn_tc, btn_selenium, btn_bdd,
+            btn_screenshot, btn_summary, sidebar_action]):
+    for msg in st.session_state.chat_history:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
 
 
 # ===============================
@@ -955,7 +959,6 @@ def handle_action(
             st.warning(
                 "⚠️ Please paste ticket details first!")
             return
-
         prompt = get_testcase_prompt(ac_text, feature)
         user_msg = (
             f"**📋 Generate Test Cases for:** {feature}"
@@ -965,7 +968,6 @@ def handle_action(
             st.markdown(user_msg)
         st.session_state.chat_history.append(
             {"role": "user", "content": user_msg})
-
         messages = [
             {"role": "system", "content": (
                 "You are an expert Technical Test Lead. "
@@ -987,13 +989,11 @@ def handle_action(
             )},
             {"role": "user", "content": prompt}
         ]
-
         with st.chat_message("assistant"):
             with st.spinner("🔍 Generating test cases..."):
                 reply = call_groq(messages)
             display_text = process_and_display_test_cases(
                 reply, feature, ac_text)
-
         st.session_state.chat_history.append(
             {"role": "assistant", "content": display_text})
 
@@ -1049,7 +1049,6 @@ def handle_action(
             st.markdown(user_msg)
         st.session_state.chat_history.append(
             {"role": "user", "content": user_msg})
-
         with st.chat_message("assistant"):
             with st.spinner(
                     "🔍 Step 1/2: Analyzing screenshot..."):
@@ -1068,14 +1067,12 @@ def handle_action(
                     vision_messages,
                     images=st.session_state.images
                 )
-
             if ui_description.startswith("❌"):
                 st.error(ui_description)
                 st.session_state.chat_history.append(
                     {"role": "assistant",
                      "content": ui_description})
                 return
-
             with st.spinner(
                     "📋 Step 2/2: Generating test cases..."):
                 tc_prompt = get_testcase_prompt(
@@ -1115,7 +1112,6 @@ def handle_action(
                     )["choices"][0]["message"]["content"]
                 except Exception as e:
                     reply = f"❌ Error: {str(e)}"
-
             screenshot_ac = (ac_text if ac_text.strip()
                              else ui_description)
             display_text = process_and_display_test_cases(
@@ -1124,7 +1120,6 @@ def handle_action(
                 screenshot_ac,
                 file_prefix="screenshot"
             )
-
         st.session_state.chat_history.append(
             {"role": "assistant", "content": display_text})
 

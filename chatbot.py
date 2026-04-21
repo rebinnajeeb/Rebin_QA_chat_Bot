@@ -139,7 +139,7 @@ def call_groq(messages: list, images: list = None) -> str:
     payload = {
         "model": model,
         "messages": api_messages,
-        "max_tokens": 4096,
+        "max_tokens": 7000,
         "temperature": 0.3,
     }
     try:
@@ -362,87 +362,64 @@ def show_dashboard(data: dict, feature: str):
 # ===============================
 
 INTERMEDIATE_STEPS_INSTRUCTION = """
-CRITICAL RULE — INTERMEDIATE NAVIGATION STEPS:
-After the 7 mandatory login steps and BEFORE the final verification
-assertion step, you MUST add 2-3 intermediate navigation steps.
-
-IMPORTANT: After step 7 (Enter credentials and login), user is ALREADY
-LOGGED IN. Do NOT repeat any login steps again.
-
-These intermediate steps should be NAVIGATION steps like:
-- "Navigate to the Product Listing Page (PLP) from the main menu","User should be able to view the PLP page","User is able to view the PLP page"
-- "Select the product subcategory from the navigation","User should be able to view products under selected category","User is able to view products under selected category"
-- "Search for a specific product in the search bar","User should be able to see search results","User is able to see search results"
-- "Click on the Alternative Products tab","User should be able to view alternative products","User is able to view alternative products"
-- "Scroll to the product grid section","User should be able to view the product grid","User is able to view the product grid"
-- "Select an alternative product from the list","User should be able to view alternative product details","User is able to view alternative product details"
-
-DO NOT repeat login steps after step 7.
-DO NOT jump directly from Step 7 to the final verification step.
-There MUST be at least 2-3 navigation steps in between.
+IMPORTANT: After step 7 user is ALREADY LOGGED IN.
+Do NOT repeat any login steps again after step 7.
+Add 2-3 navigation steps like:
+- "Navigate to the Product Listing Page (PLP)","User should be able to view the PLP page","User is able to view the PLP page"
+- "Select the product subcategory from navigation","User should be able to view products under selected category","User is able to view products under selected category"
+- "Click on the relevant section or tab","User should be able to view the section","User is able to view the section"
+- "Select a product from the list","User should be able to view product details","User is able to view product details"
+Then add the final verification step based on AC.
+DO NOT jump from step 7 directly to final verification.
 """
 
 
 def get_testcase_prompt(
         ac_text: str,
         feature_name: str = "Feature") -> str:
-    return f"""Act as a Technical Test Lead and think about every \
-possible test case for the below Requirement.
+    return f"""You are a Technical Test Lead. Generate test cases for:
 
 Feature: {feature_name}
 
-Requirement / Acceptance Criteria:
+Acceptance Criteria:
 {ac_text}
 
-MANDATORY RULE — EVERY SINGLE TEST CASE must start with \
-these EXACT 7 login steps (copy them word for word):
-
-MANDATORY STEPS (same for ALL test cases) — CSV format with 4 columns:
+EVERY test case MUST start with these 7 login steps in CSV:
 "Launch the following url https://t1-aeg-qa-a.eluxmkt.com/der/de/b2b/pre-login/","User should be able to launch the url","User is able to launch the url"
 "Click on the Partner link from the portal","User should be able to click on the partner link","User is able to Click on the partner link"
-"Verify that the user is redirected to Prelogin page after clicking on the partner link","User should be able to view the Prelogin page","User is able to View the Prelogin page"
+"Verify that the user is redirected to Prelogin page","User should be able to view the Prelogin page","User is able to View the Prelogin page"
 "Verify whether the user is able to see Login now and Contact us Buttons","User should be able to see Login now and Contact us Buttons","User is able to View the Login now and Contact us Buttons"
 "Click on Login now from prelogin page","User should be able to click Login now button","User is able to Click on the login now button"
-"Verify it is redirected to SAML login page when clicking on Login now","User should be able to view the SAML login page","User is able to view the SAML login page"
-"Enter user credentials (Chiron user credentials) and login","User should be able to login and view Chiron home page","User is able to View the Chiron home page"
+"Verify it is redirected to SAML login page","User should be able to view the SAML login page","User is able to view the SAML login page"
+"Enter user credentials and login","User should be able to login and view Chiron home page","User is able to View the Chiron home page"
 
 {INTERMEDIATE_STEPS_INSTRUCTION}
 
-AFTER the 7 mandatory steps AND the 2-3 intermediate navigation steps — add the FINAL verification/assertion step for that test case based on AC.
+Generate 6-8 test cases (mix positive and negative).
 
-Generate minimum 6-8 test cases (mix positive and negative).
-
-YOUR RESPONSE FORMAT — VERY IMPORTANT:
-First show ONLY test case titles like this:
-
+First show titles only in chat:
 ✅ Generated Test Cases:
 1. Verify whether user is able to [title]
 2. Verify whether user is not able to [title]
-... and so on
 
-DO NOT show steps in chat. Steps go ONLY in CSV below.
-
-Then provide FULL details in CSV:
+Then IMMEDIATELY provide the full CSV — do not skip:
 ---CSV START---
 Test Case Title,Steps to Reproduce,Expected Result,Actual Result
 ---CSV END---
 
-CSV Rules — VERY IMPORTANT — 4 COLUMNS:
-Column 1 - Test Case Title: Same title repeats for every step row
-Column 2 - Steps to Reproduce: ACTION the tester performs
-  POSITIVE steps: "Launch the url", "Click on button", "Navigate to page", "Enter valid credentials"
-  NEGATIVE steps: "Enter invalid credentials", "Leave field empty", "Enter wrong password"
-Column 3 - Expected Result: WHAT SHOULD HAPPEN — starts with "User should be able to..." or "User should not be able to..."
-  POSITIVE: "User should be able to view the page"
-  NEGATIVE: "User should not be able to login"
-Column 4 - Actual Result: WHAT ACTUALLY HAPPENED — starts with "User is able to..." or "User is not able to..."
-  POSITIVE: "User is able to view the page"
-  NEGATIVE: "User is not able to login"
-- All 7 mandatory login steps included for every TC
-- Then 2-3 intermediate navigation steps
-- Then the final verification step
-- Full details ONLY in CSV not in chat
-- DO NOT mix up the 4 columns!"""
+CSV Rules — 4 COLUMNS:
+Column 1 - Test Case Title: same title repeats for every step
+Column 2 - Steps to Reproduce: ACTION (Launch/Click/Navigate/Enter/Verify)
+Column 3 - Expected Result:
+  POSITIVE = "User should be able to [action]"
+  NEGATIVE = "User should not be able to [action]"
+Column 4 - Actual Result:
+  POSITIVE = "User is able to [action]"
+  NEGATIVE = "User is not able to [action]"
+- Include all 7 login steps for every TC
+- Then 2-3 navigation steps (no login repeat!)
+- Then final verification step
+- DO NOT skip the CSV section!"""
 
 
 def get_selenium_prompt(
@@ -469,55 +446,45 @@ Generate:
 
 
 def get_screenshot_tc_prompt() -> str:
-    return f"""Act as a Technical Test Lead. \
-Analyze this UI screenshot carefully.
+    return f"""You are a Technical Test Lead.
+Analyze this UI screenshot and generate test cases.
 
-Identify ALL UI elements:
-- Buttons, input fields, dropdowns, checkboxes
-- Labels, text, error messages
-- Navigation items, links, menus
-
-MANDATORY RULE — EVERY test case must start with \
-these EXACT 7 login steps — 4 columns: Steps to Reproduce, Expected Result, Actual Result:
+EVERY test case MUST start with these 7 login steps in CSV:
 "Launch the following url https://t1-aeg-qa-a.eluxmkt.com/der/de/b2b/pre-login/","User should be able to launch the url","User is able to launch the url"
 "Click on the Partner link from the portal","User should be able to click on the partner link","User is able to Click on the partner link"
-"Verify that the user is redirected to Prelogin page after clicking on the partner link","User should be able to view the Prelogin page","User is able to View the Prelogin page"
+"Verify that the user is redirected to Prelogin page","User should be able to view the Prelogin page","User is able to View the Prelogin page"
 "Verify whether the user is able to see Login now and Contact us Buttons","User should be able to see Login now and Contact us Buttons","User is able to View the Login now and Contact us Buttons"
 "Click on Login now from prelogin page","User should be able to click Login now button","User is able to Click on the login now button"
-"Verify it is redirected to SAML login page when clicking on Login now","User should be able to view the SAML login page","User is able to view the SAML login page"
-"Enter user credentials (Chiron user credentials) and login","User should be able to login and view Chiron home page","User is able to View the Chiron home page"
+"Verify it is redirected to SAML login page","User should be able to view the SAML login page","User is able to view the SAML login page"
+"Enter user credentials and login","User should be able to login and view Chiron home page","User is able to View the Chiron home page"
 
 {INTERMEDIATE_STEPS_INSTRUCTION}
 
-After the 7 mandatory login steps AND the 2-3 intermediate navigation steps, add the FINAL verification/assertion step.
+Generate 6-8 test cases based on UI elements in screenshot.
 
-Generate minimum 6-8 test cases (mix positive and negative) based on UI elements visible in the screenshot.
-
-YOUR RESPONSE FORMAT — VERY IMPORTANT:
-First show ONLY test case titles like this:
-
+First show titles:
 ✅ Generated Test Cases:
 1. Verify whether user is able to [title]
 2. Verify whether user is not able to [title]
-... and so on
 
-DO NOT show steps in chat. Steps go ONLY in CSV below.
-
-Then provide FULL details in CSV format.
+Then IMMEDIATELY provide CSV:
 ---CSV START---
 Test Case Title,Steps to Reproduce,Expected Result,Actual Result
 ---CSV END---
 
-CSV Rules — VERY IMPORTANT — 4 COLUMNS:
-Column 1 - Test Case Title: Same title repeats for every step row
-Column 2 - Steps to Reproduce: ACTION tester performs (Launch, Click, Navigate, Enter, Verify)
-Column 3 - Expected Result: WHAT SHOULD HAPPEN — "User should be able to..." or "User should not be able to..."
-Column 4 - Actual Result: WHAT ACTUALLY HAPPENED — "User is able to..." or "User is not able to..."
-- All 7 mandatory login steps included for every TC
-- Then 2-3 intermediate navigation steps based on what you see in the screenshot
-- Then the final verification step
-- Full details ONLY in CSV not in chat
-- DO NOT mix up the 4 columns!"""
+CSV Rules — 4 COLUMNS:
+Column 1 - Test Case Title: same title repeats for every step
+Column 2 - Steps to Reproduce: ACTION (Launch/Click/Navigate/Enter/Verify)
+Column 3 - Expected Result:
+  POSITIVE = "User should be able to [action]"
+  NEGATIVE = "User should not be able to [action]"
+Column 4 - Actual Result:
+  POSITIVE = "User is able to [action]"
+  NEGATIVE = "User is not able to [action]"
+- Include all 7 login steps for every TC
+- Then 2-3 navigation steps
+- Then final verification step
+- DO NOT skip the CSV section!"""
 
 
 def get_bdd_prompt(ac_text: str) -> str:
@@ -876,8 +843,7 @@ with col2:
 st.divider()
 st.markdown("### 💬 Results")
 
-# ✅ KEY FIX — only show history when NO button is clicked
-# prevents double display when button is clicked
+# ✅ FIX: Only show history when NO button is clicked
 if not any([btn_tc, btn_selenium, btn_bdd,
             btn_screenshot, btn_summary, sidebar_action]):
     for msg in st.session_state.chat_history:
@@ -970,22 +936,18 @@ def handle_action(
             {"role": "user", "content": user_msg})
         messages = [
             {"role": "system", "content": (
-                "You are an expert Technical Test Lead. "
-                "In chat response show ONLY test case titles "
-                "as a numbered list — no steps in chat. "
-                "Put ALL full step details ONLY in CSV section. "
-                "EVERY test case MUST have 7 mandatory login "
-                "steps in CSV first, THEN 2-3 intermediate "
-                "navigation/interaction steps, and THEN the "
-                "final verification step. "
-                "NEVER repeat login steps after step 7. "
-                "NEVER jump directly from login step 7 to the "
-                "verification step. "
-                "CSV has 4 columns: Test Case Title, "
-                "Steps to Reproduce, Expected Result, Actual Result. "
-                "Steps to Reproduce = action (Launch/Click/Navigate). "
+                "You are a QA expert. "
+                "Show test case titles as numbered list. "
+                "ALWAYS generate full CSV after titles. "
+                "CSV starts with ---CSV START--- "
+                "and ends with ---CSV END---. "
+                "NEVER skip the CSV section. "
+                "4 columns: Test Case Title, Steps to Reproduce, "
+                "Expected Result, Actual Result. "
+                "7 login steps first, then 2-3 nav steps, "
+                "then final verification. "
                 "Expected Result = User should be able to... "
-                "Actual Result = User is able to... "
+                "Actual Result = User is able to..."
             )},
             {"role": "user", "content": prompt}
         ]
@@ -1079,12 +1041,15 @@ def handle_action(
                     ui_description, feature)
                 tc_messages = [
                     {"role": "system", "content": (
-                        "You are an expert Technical Test Lead. "
-                        "In chat response show ONLY test case "
-                        "titles as a numbered list. "
-                        "CSV has 4 columns: Test Case Title, "
-                        "Steps to Reproduce, Expected Result, Actual Result. "
-                        "Steps to Reproduce = action. "
+                        "You are a QA expert. "
+                        "Show test case titles as numbered list. "
+                        "ALWAYS generate full CSV after titles. "
+                        "CSV starts with ---CSV START--- "
+                        "and ends with ---CSV END---. "
+                        "NEVER skip the CSV section. "
+                        "4 columns: Test Case Title, "
+                        "Steps to Reproduce, Expected Result, "
+                        "Actual Result. "
                         "Expected Result = User should be able to... "
                         "Actual Result = User is able to... "
                         "NEVER repeat login steps after step 7."
@@ -1099,7 +1064,7 @@ def handle_action(
                     payload = {
                         "model": "llama-3.3-70b-versatile",
                         "messages": tc_messages,
-                        "max_tokens": 8192,
+                        "max_tokens": 7000,
                         "temperature": 0.3,
                     }
                     resp = requests.post(

@@ -94,6 +94,8 @@ if "last_feature" not in st.session_state:
     st.session_state.last_feature = ""
 if "last_file_prefix" not in st.session_state:
     st.session_state.last_file_prefix = ""
+if "last_action" not in st.session_state:
+    st.session_state.last_action = ""
 
 
 # ===============================
@@ -156,17 +158,15 @@ def call_groq(messages: list, images: list = None) -> str:
 
 
 # ===============================
-# 📊 DASHBOARD FUNCTIONS — FIXED!
+# 📊 DASHBOARD FUNCTIONS
 # ===============================
 def compute_dashboard(test_cases: list, ac_text: str) -> dict:
 
-    # Get unique titles first
     unique_titles = list(dict.fromkeys(
         tc["Test Case Title"] for tc in test_cases
         if tc.get("Test Case Title")
     ))
 
-    # Count positive by TITLE not steps!
     positive = sum(
         1 for title in unique_titles
         if "not able" not in title.lower()
@@ -175,7 +175,6 @@ def compute_dashboard(test_cases: list, ac_text: str) -> dict:
         and "invalid" not in title.lower()
     )
 
-    # Count negative by TITLE not steps!
     negative = sum(
         1 for title in unique_titles
         if "not able" in title.lower()
@@ -184,7 +183,6 @@ def compute_dashboard(test_cases: list, ac_text: str) -> dict:
         or "invalid" in title.lower()
     )
 
-    # Priority based on keywords not title length!
     high = sum(
         1 for t in unique_titles
         if any(word in t.lower() for word in [
@@ -195,7 +193,6 @@ def compute_dashboard(test_cases: list, ac_text: str) -> dict:
     )
     med = max(0, len(unique_titles) - high)
 
-    # AC Coverage
     ac_lines = [
         l.strip() for l in ac_text.split("\n")
         if l.strip() and len(l.strip()) > 10
@@ -218,7 +215,6 @@ def compute_dashboard(test_cases: list, ac_text: str) -> dict:
         (covered / max(len(ac_lines), 1)) * 100
     )
 
-    # Duplicates check by title
     all_titles = [
         tc.get("Test Case Title", "")
         for tc in test_cases
@@ -367,28 +363,23 @@ def show_dashboard(data: dict, feature: str):
 
 INTERMEDIATE_STEPS_INSTRUCTION = """
 CRITICAL RULE — INTERMEDIATE NAVIGATION STEPS:
-After the 7 mandatory login steps and BEFORE the final verification/
-assertion step, you MUST add 2-3 intermediate navigation and
-interaction steps that describe HOW the user reaches the feature
-being tested.
+After the 7 mandatory login steps and BEFORE the final verification
+assertion step, you MUST add 2-3 intermediate navigation steps.
 
-These intermediate steps should cover actions like:
-- Navigating to the correct page (e.g., "User should be able to navigate to the PLP page from the main menu")
-- Selecting a category or subcategory (e.g., "User should be able to select the product subcategory from the navigation")
-- Performing a search or filter (e.g., "User should be able to search for a specific product in the search bar")
-- Clicking on a specific section or tab (e.g., "User should be able to click on the 'Alternative Products' tab")
-- Scrolling or locating a UI element (e.g., "User should be able to scroll to the product grid section")
-- Selecting a product or item (e.g., "User should be able to select an alternative product from the list")
+IMPORTANT: After step 7 (Enter credentials and login), user is ALREADY
+LOGGED IN. Do NOT repeat any login steps again.
 
-EXAMPLE of correct step flow for a test case:
-  Step 1-7: [mandatory login steps]
-  Step 8:  User should be able to navigate to the Product Listing Page (PLP) | User is able to view the PLP page
-  Step 9:  User should be able to select a product category from the left navigation menu | User is able to view products under the selected category
-  Step 10: User should be able to click on an alternative product from the product grid | User is able to view the alternative product details
-  Step 11: User should be able to view the PLP Reset message in the header | User is able to see the info message bar above the product grid
+These intermediate steps should be NAVIGATION steps like:
+- "Navigate to the Product Listing Page (PLP) from the main menu","User should be able to view the PLP page","User is able to view the PLP page"
+- "Select the product subcategory from the navigation","User should be able to view products under selected category","User is able to view products under selected category"
+- "Search for a specific product in the search bar","User should be able to see search results","User is able to see search results"
+- "Click on the Alternative Products tab","User should be able to view alternative products","User is able to view alternative products"
+- "Scroll to the product grid section","User should be able to view the product grid","User is able to view the product grid"
+- "Select an alternative product from the list","User should be able to view alternative product details","User is able to view alternative product details"
 
-DO NOT jump directly from Step 7 (login) to the verification step.
-There MUST be at least 2-3 navigation/interaction steps in between.
+DO NOT repeat login steps after step 7.
+DO NOT jump directly from Step 7 to the final verification step.
+There MUST be at least 2-3 navigation steps in between.
 """
 
 
@@ -406,26 +397,18 @@ Requirement / Acceptance Criteria:
 MANDATORY RULE — EVERY SINGLE TEST CASE must start with \
 these EXACT 7 login steps (copy them word for word):
 
-MANDATORY STEPS (same for ALL test cases):
-Launch the following url "https://t1-aeg-qa-a.eluxmkt.com/der/de/b2b/pre-login/" | User should be able to launch the url
-User should be able to Partner link from the portal | User is able to Click on the partner link
-User should be able to Redirected to "Prelogin page" after clicking on the partner link from the portal | User is able to View the "Prelogin page"
-User should be able to Able to see "Login now", "Contact us" Buttons | User is able to View the "Login now", "Contact us" Buttons
-User should be able to "Login now" from prelogin page. | User is able to Click on the login now button
-User should be able to Redirected to "SAML login page" when clicking on "Login now" from prelogin page | User is able to User should be redirected to SAML login page
-User should be able to redirect to the Chiron page after the successful login credentials (Chiron user credentials) | User is able to View the login page
+MANDATORY STEPS (same for ALL test cases) — CSV format with 4 columns:
+"Launch the following url https://t1-aeg-qa-a.eluxmkt.com/der/de/b2b/pre-login/","User should be able to launch the url","User is able to launch the url"
+"Click on the Partner link from the portal","User should be able to click on the partner link","User is able to Click on the partner link"
+"Verify that the user is redirected to Prelogin page after clicking on the partner link","User should be able to view the Prelogin page","User is able to View the Prelogin page"
+"Verify whether the user is able to see Login now and Contact us Buttons","User should be able to see Login now and Contact us Buttons","User is able to View the Login now and Contact us Buttons"
+"Click on Login now from prelogin page","User should be able to click Login now button","User is able to Click on the login now button"
+"Verify it is redirected to SAML login page when clicking on Login now","User should be able to view the SAML login page","User is able to view the SAML login page"
+"Enter user credentials (Chiron user credentials) and login","User should be able to login and view Chiron home page","User is able to View the Chiron home page"
 
 {INTERMEDIATE_STEPS_INSTRUCTION}
 
 AFTER the 7 mandatory steps AND the 2-3 intermediate navigation steps — add the FINAL verification/assertion step for that test case based on AC.
-
-STRICT LANGUAGE RULES FOR SPECIFIC STEPS:
-POSITIVE:
-- Column 2 MUST start with: "User should be able to..."
-- Column 3 MUST start with: "User is able to..."
-NEGATIVE:
-- Column 2 MUST start with: "User should not be able to..."
-- Column 3 MUST start with: "User is not able to..."
 
 Generate minimum 6-8 test cases (mix positive and negative).
 
@@ -441,17 +424,25 @@ DO NOT show steps in chat. Steps go ONLY in CSV below.
 
 Then provide FULL details in CSV:
 ---CSV START---
-Test Case Title,Steps to Reproduce,Expected Result
+Test Case Title,Steps to Reproduce,Expected Result,Actual Result
 ---CSV END---
 
-CSV Rules:
-- Same Test Case Title repeats for every step row
-- All 7 mandatory steps included for every TC
+CSV Rules — VERY IMPORTANT — 4 COLUMNS:
+Column 1 - Test Case Title: Same title repeats for every step row
+Column 2 - Steps to Reproduce: ACTION the tester performs
+  POSITIVE steps: "Launch the url", "Click on button", "Navigate to page", "Enter valid credentials"
+  NEGATIVE steps: "Enter invalid credentials", "Leave field empty", "Enter wrong password"
+Column 3 - Expected Result: WHAT SHOULD HAPPEN — starts with "User should be able to..." or "User should not be able to..."
+  POSITIVE: "User should be able to view the page"
+  NEGATIVE: "User should not be able to login"
+Column 4 - Actual Result: WHAT ACTUALLY HAPPENED — starts with "User is able to..." or "User is not able to..."
+  POSITIVE: "User is able to view the page"
+  NEGATIVE: "User is not able to login"
+- All 7 mandatory login steps included for every TC
 - Then 2-3 intermediate navigation steps
 - Then the final verification step
-- Positive: "User should be able to..." | "User is able to..."
-- Negative: "User should not be able to..." | "User is not able to..."
-- Full details ONLY in CSV not in chat"""
+- Full details ONLY in CSV not in chat
+- DO NOT mix up the 4 columns!"""
 
 
 def get_selenium_prompt(
@@ -487,21 +478,18 @@ Identify ALL UI elements:
 - Navigation items, links, menus
 
 MANDATORY RULE — EVERY test case must start with \
-these EXACT 7 login steps:
-Launch the following url "https://t1-aeg-qa-a.eluxmkt.com/der/de/b2b/pre-login/" | User should be able to launch the url
-User should be able to Partner link from the portal | User is able to Click on the partner link
-User should be able to Redirected to "Prelogin page" after clicking on the partner link from the portal | User is able to View the "Prelogin page"
-User should be able to Able to see "Login now", "Contact us" Buttons | User is able to View the "Login now", "Contact us" Buttons
-User should be able to "Login now" from prelogin page. | User is able to Click on the login now button
-User should be able to Redirected to "SAML login page" when clicking on "Login now" from prelogin page | User is able to User should be redirected to SAML login page
-User should be able to redirect to the Chiron page after the successful login credentials (Chiron user credentials) | User is able to View the login page
+these EXACT 7 login steps — 4 columns: Steps to Reproduce, Expected Result, Actual Result:
+"Launch the following url https://t1-aeg-qa-a.eluxmkt.com/der/de/b2b/pre-login/","User should be able to launch the url","User is able to launch the url"
+"Click on the Partner link from the portal","User should be able to click on the partner link","User is able to Click on the partner link"
+"Verify that the user is redirected to Prelogin page after clicking on the partner link","User should be able to view the Prelogin page","User is able to View the Prelogin page"
+"Verify whether the user is able to see Login now and Contact us Buttons","User should be able to see Login now and Contact us Buttons","User is able to View the Login now and Contact us Buttons"
+"Click on Login now from prelogin page","User should be able to click Login now button","User is able to Click on the login now button"
+"Verify it is redirected to SAML login page when clicking on Login now","User should be able to view the SAML login page","User is able to view the SAML login page"
+"Enter user credentials (Chiron user credentials) and login","User should be able to login and view Chiron home page","User is able to View the Chiron home page"
 
 {INTERMEDIATE_STEPS_INSTRUCTION}
 
 After the 7 mandatory login steps AND the 2-3 intermediate navigation steps, add the FINAL verification/assertion step.
-
-POSITIVE: "User should be able to..." | "User is able to..."
-NEGATIVE: "User should not be able to..." | "User is not able to..."
 
 Generate minimum 6-8 test cases (mix positive and negative) based on UI elements visible in the screenshot.
 
@@ -516,22 +504,20 @@ First show ONLY test case titles like this:
 DO NOT show steps in chat. Steps go ONLY in CSV below.
 
 Then provide FULL details in CSV format.
-IMPORTANT: The CSV MUST be properly formatted with exactly 3 columns.
-Each row must have: "Test Case Title","Steps to Reproduce","Expected Result"
-Use double quotes around each field if it contains commas.
-
 ---CSV START---
-Test Case Title,Steps to Reproduce,Expected Result
+Test Case Title,Steps to Reproduce,Expected Result,Actual Result
 ---CSV END---
 
-CSV Rules:
-- Same Test Case Title repeats for every step row
-- All 7 mandatory steps included for every TC
+CSV Rules — VERY IMPORTANT — 4 COLUMNS:
+Column 1 - Test Case Title: Same title repeats for every step row
+Column 2 - Steps to Reproduce: ACTION tester performs (Launch, Click, Navigate, Enter, Verify)
+Column 3 - Expected Result: WHAT SHOULD HAPPEN — "User should be able to..." or "User should not be able to..."
+Column 4 - Actual Result: WHAT ACTUALLY HAPPENED — "User is able to..." or "User is not able to..."
+- All 7 mandatory login steps included for every TC
 - Then 2-3 intermediate navigation steps based on what you see in the screenshot
 - Then the final verification step
-- Positive: "User should be able to..." | "User is able to..."
-- Negative: "User should not be able to..." | "User is not able to..."
-- Full details ONLY in CSV not in chat"""
+- Full details ONLY in CSV not in chat
+- DO NOT mix up the 4 columns!"""
 
 
 def get_bdd_prompt(ac_text: str) -> str:
@@ -609,12 +595,13 @@ def parse_test_cases_to_list(raw_text: str) -> list:
                         title = parts[0].strip().strip('"')
                         step = parts[1].strip().strip('"')
                         expected = parts[2].strip().strip('"')
+                        actual = parts[3].strip().strip('"') if len(parts) >= 4 else ""
                         if title and step and len(step) > 5:
                             test_cases.append({
                                 "Test Case Title": title,
                                 "Steps to Reproduce": step,
                                 "Expected Result": expected,
-                                "Actual Result": "",
+                                "Actual Result": actual,
                                 "Status": "Not Executed"
                             })
             except Exception:
@@ -642,12 +629,13 @@ def parse_test_cases_to_list(raw_text: str) -> list:
                         title = parts[0].strip().strip('"')
                         step = parts[1].strip().strip('"')
                         expected = parts[2].strip().strip('"')
+                        actual = parts[3].strip().strip('"') if len(parts) >= 4 else ""
                         if title and step and len(step) > 5:
                             test_cases.append({
                                 "Test Case Title": title,
                                 "Steps to Reproduce": step,
                                 "Expected Result": expected,
-                                "Actual Result": "",
+                                "Actual Result": actual,
                                 "Status": "Not Executed"
                             })
             except Exception:
@@ -831,6 +819,7 @@ if st.sidebar.button(
     st.session_state.last_reply = ""
     st.session_state.last_feature = ""
     st.session_state.last_file_prefix = ""
+    st.session_state.last_action = ""
     st.rerun()
 
 
@@ -852,25 +841,7 @@ with col1:
         "📋 Paste Full Ticket Details Here "
         "(User Story + Requirements + AC)",
         height=300,
-        placeholder="""Paste everything here together...
-
-Display PLP Reset message in header
-
-As a retail partner viewing alternative products
-I want to be able to easily navigate back to the product list page
-So that I can continue to discover products
-
-Requirements:
-* at the top of the PLP card section - message shown as per design
-* a link is also shown for the subcategory of the current product
-* when clicked, the subcategory PLP loads
-
-Acceptance Criteria:
-* Given a customer is viewing the PLP
-   * When the page is viewed with an alternative product
-   * Then an info message bar should be displayed above product grid
-   * "Showing products similar to: current product name"
-   * And a link to view all products in current product's category"""
+        placeholder="""Paste everything here together..."""
     )
 
 with col2:
@@ -977,6 +948,8 @@ def handle_action(
         ac_text: str = "",
         feature: str = "Feature"):
 
+    st.session_state.last_action = action_type
+
     if action_type == "generate_tc":
         if not ac_text.strip():
             st.warning(
@@ -1001,16 +974,16 @@ def handle_action(
                 "Put ALL full step details ONLY in CSV section. "
                 "EVERY test case MUST have 7 mandatory login "
                 "steps in CSV first, THEN 2-3 intermediate "
-                "navigation/interaction steps (like navigating "
-                "to PLP page, selecting category, clicking on "
-                "a section), and THEN the final verification step. "
+                "navigation/interaction steps, and THEN the "
+                "final verification step. "
+                "NEVER repeat login steps after step 7. "
                 "NEVER jump directly from login step 7 to the "
-                "verification step — there MUST be navigation "
-                "steps in between. "
-                "POSITIVE: 'User should be able to' / "
-                "'User is able to'. "
-                "NEGATIVE: 'User should not be able to' / "
-                "'User is not able to'."
+                "verification step. "
+                "CSV has 4 columns: Test Case Title, "
+                "Steps to Reproduce, Expected Result, Actual Result. "
+                "Steps to Reproduce = action (Launch/Click/Navigate). "
+                "Expected Result = User should be able to... "
+                "Actual Result = User is able to... "
             )},
             {"role": "user", "content": prompt}
         ]
@@ -1084,17 +1057,11 @@ def handle_action(
                     {"role": "system", "content": (
                         "You are an expert UI analyst. "
                         "Describe every UI element you see "
-                        "in the screenshot in detail. "
-                        "List every button, field, link, "
-                        "label, dropdown, checkbox, table, "
-                        "image, tab, heading, and text. "
-                        "Also describe the page layout and "
-                        "what actions a user can perform."
+                        "in the screenshot in detail."
                     )},
                     {"role": "user", "content": (
                         "Analyze this UI screenshot carefully "
-                        "and list ALL UI elements you can see. "
-                        "Be extremely detailed and thorough."
+                        "and list ALL UI elements you can see."
                     )}
                 ]
                 ui_description = call_groq(
@@ -1117,22 +1084,13 @@ def handle_action(
                     {"role": "system", "content": (
                         "You are an expert Technical Test Lead. "
                         "In chat response show ONLY test case "
-                        "titles as a numbered list — no steps "
-                        "in chat. "
-                        "Put ALL full step details ONLY in CSV "
-                        "section. "
-                        "EVERY test case MUST have 7 mandatory "
-                        "login steps in CSV first, THEN 2-3 "
-                        "intermediate navigation/interaction "
-                        "steps, and THEN the final verification "
-                        "step. "
-                        "NEVER jump directly from login step 7 "
-                        "to the verification step — there MUST "
-                        "be navigation steps in between. "
-                        "POSITIVE: 'User should be able to' / "
-                        "'User is able to'. "
-                        "NEGATIVE: 'User should not be able to' "
-                        "/ 'User is not able to'."
+                        "titles as a numbered list. "
+                        "CSV has 4 columns: Test Case Title, "
+                        "Steps to Reproduce, Expected Result, Actual Result. "
+                        "Steps to Reproduce = action. "
+                        "Expected Result = User should be able to... "
+                        "Actual Result = User is able to... "
+                        "NEVER repeat login steps after step 7."
                     )},
                     {"role": "user", "content": tc_prompt}
                 ]
@@ -1247,34 +1205,33 @@ def handle_action(
 if btn_tc:
     handle_action(
         "generate_tc", ac_input, feature_name or "Feature")
-if btn_selenium:
+elif btn_selenium:
     handle_action(
         "generate_selenium", ac_input, feature_name or "Feature")
-if btn_bdd:
+elif btn_bdd:
     handle_action(
         "generate_bdd", ac_input, feature_name or "Feature")
-if btn_screenshot:
+elif btn_screenshot:
     handle_action(
         "analyze_screenshot", ac_input,
         feature_name or "Feature")
-if btn_summary:
+elif btn_summary:
     handle_action(
         "summary_report", ac_input, feature_name or "Feature")
-
-if sidebar_action == "generate_tc":
+elif sidebar_action == "generate_tc":
     handle_action(
         "generate_tc", ac_input, feature_name or "Feature")
-if sidebar_action == "generate_selenium":
+elif sidebar_action == "generate_selenium":
     handle_action(
         "generate_selenium", ac_input, feature_name or "Feature")
-if sidebar_action == "analyze_screenshot":
+elif sidebar_action == "analyze_screenshot":
     handle_action(
         "analyze_screenshot", ac_input,
         feature_name or "Feature")
-if sidebar_action == "generate_bdd":
+elif sidebar_action == "generate_bdd":
     handle_action(
         "generate_bdd", ac_input, feature_name or "Feature")
-if sidebar_action == "summary_report":
+elif sidebar_action == "summary_report":
     handle_action(
         "summary_report", ac_input, feature_name or "Feature")
 
@@ -1286,7 +1243,10 @@ if (st.session_state.last_test_cases
         and st.session_state.last_reply
         and not any([btn_tc, btn_selenium, btn_bdd,
                      btn_screenshot, btn_summary,
-                     sidebar_action])):
+                     sidebar_action])
+        and st.session_state.last_action in [
+            "generate_tc", "analyze_screenshot"]):
+
     feature = st.session_state.last_feature
     parsed = st.session_state.last_test_cases
     ac_text = st.session_state.last_ac
@@ -1296,7 +1256,6 @@ if (st.session_state.last_test_cases
     if display_text:
         with st.chat_message("assistant"):
             st.markdown(display_text)
-
             csv_data = generate_csv(parsed)
             unique_titles = list(dict.fromkeys(
                 tc["Test Case Title"]
@@ -1343,9 +1302,8 @@ if user_prompt:
         "You are an expert QA Engineer and Technical Test Lead. "
         "Help with test cases, Selenium Java, bug reports, "
         "and QA best practices. "
-        "POSITIVE: 'User should be able to' / 'User is able to'. "
-        "NEGATIVE: 'User should not be able to' / "
-        "'User is not able to'."
+        "Expected Result = User should be able to... "
+        "Actual Result = User is able to..."
     )
     if st.session_state.file_text:
         system_msg += (

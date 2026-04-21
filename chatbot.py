@@ -73,6 +73,17 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
+# ✅ Auto scroll to bottom
+st.markdown("""
+<script>
+    window.addEventListener('load', function() {
+        setTimeout(function() {
+            window.scrollTo(0, document.body.scrollHeight);
+        }, 500);
+    });
+</script>
+""", unsafe_allow_html=True)
+
 # ---------- SESSION STATE ----------
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
@@ -843,12 +854,10 @@ with col2:
 st.divider()
 st.markdown("### 💬 Results")
 
-# ✅ FIX: Only show history when NO button is clicked
-if not any([btn_tc, btn_selenium, btn_bdd,
-            btn_screenshot, btn_summary, sidebar_action]):
-    for msg in st.session_state.chat_history:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
+# ✅ Always show chat history like ChatGPT
+for msg in st.session_state.chat_history:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
 
 
 # ===============================
@@ -1201,9 +1210,9 @@ elif sidebar_action == "summary_report":
 # ===============================
 if (st.session_state.last_test_cases
         and st.session_state.last_reply
-        and not any([btn_tc, btn_selenium, btn_bdd,
-                     btn_screenshot, btn_summary,
-                     sidebar_action])
+        and not btn_tc
+        and not btn_screenshot
+        and sidebar_action not in ["generate_tc", "analyze_screenshot"]
         and st.session_state.last_action in [
             "generate_tc", "analyze_screenshot"]):
 

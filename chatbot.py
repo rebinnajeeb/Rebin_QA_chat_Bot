@@ -1118,7 +1118,7 @@ def handle_action(
         with st.chat_message("assistant"):
             with st.spinner("📝 Generating BDD..."):
                 reply = call_groq(messages)
-            st.markdown(reply)
+            st.code(reply, language="gherkin")
             st.download_button(
                 label="💾 Download .feature file",
                 data=reply.encode("utf-8"),

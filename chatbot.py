@@ -7,7 +7,6 @@ import base64
 import os
 import io
 import csv
-import zipfile
 
 # ---------- LOAD ENV ----------
 load_dotenv()
@@ -17,7 +16,12 @@ if not GROQ_KEY:
     st.error("❌ GROQ_API_KEY missing. Check .env file")
     st.stop()
 
-st.set_page_config(page_title="QA Test Assistant", page_icon="🧪", layout="wide")
+# ---------- PAGE CONFIG ----------
+st.set_page_config(
+    page_title="QA Test Assistant",
+    page_icon="🧪",
+    layout="wide"
+)
 
 st.markdown("""
 <style>
@@ -35,15 +39,22 @@ st.markdown("""
     }
     .metric-num { font-size: 32px; font-weight: 700; }
     .metric-lbl { font-size: 13px; color: #444 !important; margin-top: 4px; }
-    .badge-high { background:#ffe0e0; color:#c00; padding:2px 8px; border-radius:99px; font-size:11px; }
-    .badge-med { background:#fff3cd; color:#856404; padding:2px 8px; border-radius:99px; font-size:11px; }
-    .badge-pos { background:#d1f5ea; color:#0f6e56; padding:2px 8px; border-radius:99px; font-size:11px; }
-    .badge-neg { background:#fde8e8; color:#a32d2d; padding:2px 8px; border-radius:99px; font-size:11px; }
+    .badge-high { background:#ffe0e0; color:#c00;
+        padding:2px 8px; border-radius:99px; font-size:11px; }
+    .badge-med { background:#fff3cd; color:#856404;
+        padding:2px 8px; border-radius:99px; font-size:11px; }
+    .badge-low { background:#d4edda; color:#155724;
+        padding:2px 8px; border-radius:99px; font-size:11px; }
+    .badge-pos { background:#d1f5ea; color:#0f6e56;
+        padding:2px 8px; border-radius:99px; font-size:11px; }
+    .badge-neg { background:#fde8e8; color:#a32d2d;
+        padding:2px 8px; border-radius:99px; font-size:11px; }
     .ai-suggestion {
         background: #e8f4fd; border-left: 4px solid #185FA5;
         padding: 10px 14px; border-radius: 0 8px 8px 0;
         font-size: 14px; margin: 8px 0;
-        color: #0a2540 !important; font-weight: 500 !important;
+        color: #0a2540 !important;
+        font-weight: 500 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -122,13 +133,13 @@ def call_groq(messages: list, images: list = None) -> str:
     payload = {
         "model": model,
         "messages": api_messages,
-        "max_tokens": 8000,
+        "max_tokens": 7000,
         "temperature": 0.3,
     }
     try:
         response = requests.post(
             "https://api.groq.com/openai/v1/chat/completions",
-            headers=headers, json=payload, timeout=120,
+            headers=headers, json=payload, timeout=60,
         )
         response.raise_for_status()
         return response.json()["choices"][0]["message"]["content"]
@@ -141,73 +152,104 @@ def call_groq(messages: list, images: list = None) -> str:
 
 
 # ===============================
-# 🔑 NEGATIVE TITLE CHECK
+# 🔑 SINGLE SOURCE OF TRUTH: is_negative_title
 # ===============================
 def is_negative_title(title: str) -> bool:
+    """
+    A test case is NEGATIVE if and only if its title contains 'not able'.
+    Used everywhere so dashboard counts and badge labels always match.
+    """
     return "not able" in title.lower()
 
 
 # ===============================
-# 📦 ZIP HELPER
-# ===============================
-def create_zip(files: dict) -> bytes:
-    """files = {"filename.java": "content string", ...}"""
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for filename, content in files.items():
-            zf.writestr(filename, content)
-    return buf.getvalue()
-
-
-# ===============================
-# 📊 DASHBOARD
+# 📊 DASHBOARD FUNCTIONS
 # ===============================
 def compute_dashboard(test_cases: list, ac_text: str) -> dict:
     unique_titles = list(dict.fromkeys(
         tc["Test Case Title"] for tc in test_cases
         if tc.get("Test Case Title")
     ))
+
     negative = sum(1 for t in unique_titles if is_negative_title(t))
     positive = len(unique_titles) - negative
+
     high = sum(
         1 for t in unique_titles
         if any(word in t.lower() for word in [
-            "login", "security", "payment", "critical",
-            "error", "not able", "invalid", "fail", "unable"
+            "login", "security", "payment",
+            "critical", "error", "not able",
+            "invalid", "fail", "unable"
         ])
     )
     med = max(0, len(unique_titles) - high)
-    ac_lines = [l.strip() for l in ac_text.split("\n") if l.strip() and len(l.strip()) > 10]
+
+    ac_lines = [
+        l.strip() for l in ac_text.split("\n")
+        if l.strip() and len(l.strip()) > 10
+    ]
     covered = 0
     for ac_line in ac_lines:
         keywords = [w for w in ac_line.lower().split() if len(w) > 4][:3]
         for tc in test_cases:
-            tc_text = (tc.get("Steps to Reproduce", "") + tc.get("Test Case Title", "")).lower()
+            tc_text = (
+                tc.get("Steps to Reproduce", "") +
+                tc.get("Test Case Title", "")
+            ).lower()
             if any(kw in tc_text for kw in keywords):
                 covered += 1
                 break
     coverage_pct = int((covered / max(len(ac_lines), 1)) * 100)
+
     return {
-        "total": len(unique_titles), "positive": positive, "negative": negative,
-        "unique_tcs": len(unique_titles), "high": high, "med": med,
-        "coverage_pct": coverage_pct, "unique_titles": unique_titles,
+        "total": len(unique_titles),
+        "positive": positive,
+        "negative": negative,
+        "unique_tcs": len(unique_titles),
+        "high": high,
+        "med": med,
+        "coverage_pct": coverage_pct,
+        "unique_titles": unique_titles[:8],
     }
 
 
 def render_dashboard(data: dict, feature: str):
     st.markdown("---")
     st.markdown(f"### 📊 Live Dashboard — *{feature}*")
+
     c1, c2, c3, c4 = st.columns(4)
     with c1:
-        st.markdown(f'<div class="metric-card"><div class="metric-num" style="color:#185FA5">{data["unique_tcs"]}</div><div class="metric-lbl">Total Test Cases</div></div>', unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-num" style="color:#185FA5">{data['unique_tcs']}</div>
+            <div class="metric-lbl">Total Test Cases</div>
+        </div>""", unsafe_allow_html=True)
     with c2:
-        st.markdown(f'<div class="metric-card"><div class="metric-num" style="color:#3B6D11">{data["positive"]}</div><div class="metric-lbl">Positive Test Cases</div></div>', unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-num" style="color:#3B6D11">{data['positive']}</div>
+            <div class="metric-lbl">Positive Test Cases</div>
+        </div>""", unsafe_allow_html=True)
     with c3:
-        st.markdown(f'<div class="metric-card"><div class="metric-num" style="color:#A32D2D">{data["negative"]}</div><div class="metric-lbl">Negative Test Cases</div></div>', unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-num" style="color:#A32D2D">{data['negative']}</div>
+            <div class="metric-lbl">Negative Test Cases</div>
+        </div>""", unsafe_allow_html=True)
     with c4:
-        color = "#3B6D11" if data["coverage_pct"] >= 80 else "#854F0B" if data["coverage_pct"] >= 50 else "#A32D2D"
-        st.markdown(f'<div class="metric-card"><div class="metric-num" style="color:{color}">{data["coverage_pct"]}%</div><div class="metric-lbl">AC Coverage</div></div>', unsafe_allow_html=True)
+        color = (
+            "#3B6D11" if data["coverage_pct"] >= 80
+            else "#854F0B" if data["coverage_pct"] >= 50
+            else "#A32D2D"
+        )
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-num" style="color:{color}">{data['coverage_pct']}%</div>
+            <div class="metric-lbl">AC Coverage</div>
+        </div>""", unsafe_allow_html=True)
+
     st.markdown("<br>", unsafe_allow_html=True)
+
     st.markdown("#### 🎯 Coverage Breakdown")
     pos_pct = int((data["positive"] / max(data["total"], 1)) * 100)
     neg_pct = int((data["negative"] / max(data["total"], 1)) * 100)
@@ -217,17 +259,32 @@ def render_dashboard(data: dict, feature: str):
     st.progress(neg_pct / 100)
     st.markdown(f"**AC Coverage** — {data['coverage_pct']}%")
     st.progress(data["coverage_pct"] / 100)
+
     st.markdown("#### 🏷️ Priority Distribution")
     p1, p2 = st.columns(2)
     with p1:
-        st.markdown(f'<span class="badge-high">🔴 High: {data["high"]}</span>', unsafe_allow_html=True)
+        st.markdown(
+            f'<span class="badge-high">🔴 High: {data["high"]}</span>',
+            unsafe_allow_html=True,
+        )
     with p2:
-        st.markdown(f'<span class="badge-med">🟡 Medium: {data["med"]}</span>', unsafe_allow_html=True)
+        st.markdown(
+            f'<span class="badge-med">🟡 Medium: {data["med"]}</span>',
+            unsafe_allow_html=True,
+        )
+
     st.markdown("#### 📋 Test Cases Generated")
     for i, title in enumerate(data["unique_titles"], 1):
-        badge = "neg" if is_negative_title(title) else "pos"
-        label = "Negative" if badge == "neg" else "Positive"
-        st.markdown(f'{i}. <span class="badge-{badge}">{label}</span> {title}', unsafe_allow_html=True)
+        if is_negative_title(title):
+            badge = "neg"
+            label = "Negative"
+        else:
+            badge = "pos"
+            label = "Positive"
+        st.markdown(
+            f'{i}. <span class="badge-{badge}">{label}</span> {title}',
+            unsafe_allow_html=True,
+        )
 
 
 # ===============================
@@ -265,11 +322,14 @@ EVERY test case MUST start with these 7 login steps in CSV:
 
 {INTERMEDIATE_STEPS_INSTRUCTION}
 
-Generate as many test cases as needed to cover ALL acceptance criteria (mix positive and negative).
+Generate 6-8 test cases (mix positive and negative).
 
-IMPORTANT: Do NOT list titles separately before CSV.
-Go DIRECTLY to CSV only:
+First show titles only in chat:
+✅ Generated Test Cases:
+1. Verify whether user is able to [title]
+2. Verify whether user is not able to [title]
 
+Then IMMEDIATELY provide the full CSV — do not skip:
 ---CSV START---
 Test Case Title,Steps to Reproduce,Expected Result,Actual Result
 ---CSV END---
@@ -286,82 +346,62 @@ Column 4 - Actual Result:
 - Include all 7 login steps for every TC
 - Then 2-3 navigation steps (no login repeat!)
 - Then final verification step
-- Write ALL test cases completely before ending
-- DO NOT stop in the middle of a test case!"""
+- DO NOT skip the CSV section!"""
 
 
-def get_selenium_prompt(ac_text: str, tc_text: str = "", feature: str = "Feature") -> str:
+def get_selenium_prompt(ac_text: str, tc_text: str = "") -> str:
     return f"""Act as a Senior Selenium Automation Engineer.
 
-Generate COMPLETE Selenium Java automation code for:
-Feature: {feature}
+Generate complete Selenium Java code using:
+- TestNG framework
+- Page Object Model (POM)
+- WebDriverManager for driver setup
+- TestNG Assert for assertions
 
 Acceptance Criteria:
 {ac_text}
 
-{f"Test Cases:{chr(10)}{tc_text}" if tc_text else ""}
+{f"Test Cases context:{chr(10)}{tc_text}" if tc_text else ""}
 
-Generate ALL 4 files clearly separated:
-
-===FILE: PageObject.java===
-(Page Object Model — all @FindBy locators and methods)
-
-===FILE: TestNGTest.java===
-(TestNG test class with @BeforeClass @Test @AfterClass, login in setup, positive and negative tests)
-
-===FILE: testng.xml===
-(TestNG suite config pointing to TestNGTest.java)
-
-===FILE: pom.xml===
-(Maven dependencies for Selenium, TestNG, WebDriverManager)
-
-Rules:
-- Use WebDriverManager for driver setup
-- Use TestNG Assert for assertions
-- Login URL: https://t1-aeg-qa-a.eluxmkt.com/der/de/b2b/pre-login/
-- Add meaningful comments
-- Make code production ready"""
+Generate:
+1. Page Object class with @FindBy WebElements and methods
+2. TestNG Test class with @BeforeClass @Test @AfterClass
+3. Both positive and negative test methods
+4. Login flow in @BeforeClass setup
+5. Meaningful method names and comments"""
 
 
-def get_bdd_prompt(ac_text: str, feature: str = "Feature") -> str:
-    return f"""Act as a Senior BDD Automation Engineer.
-
-Generate COMPLETE Cucumber BDD automation code for:
-Feature: {feature}
+def get_bdd_prompt(ac_text: str) -> str:
+    return f"""Act as a BDD Expert. Convert to Gherkin format.
 
 Acceptance Criteria:
 {ac_text}
 
-Generate ALL 4 files clearly separated:
+Feature: [Feature Name]
 
-===FILE: {feature.replace(' ', '')}.feature===
-(Gherkin feature file with Background, positive and negative Scenarios)
-
-Background must include:
+  Background:
     Given user navigates to pre-login URL
     And user clicks Partner link
+    And user is redirected to Prelogin page
     And user clicks Login now
-    And user logs in with valid credentials
+    And user logs in with Chiron credentials
 
-===FILE: StepDefinitions.java===
-(Java step definitions mapping every Given/When/Then from feature file)
+  Scenario: [Positive scenario]
+    Given [precondition]
+    When [action]
+    Then [expected result]
 
-===FILE: PageObject.java===
-(Page Object Model with @FindBy locators and action methods)
-
-===FILE: pom.xml===
-(Maven dependencies for Selenium, Cucumber, TestNG, WebDriverManager)
-
-Rules:
-- Login URL: https://t1-aeg-qa-a.eluxmkt.com/der/de/b2b/pre-login/
-- Use @FindBy in PageObject
-- StepDefinitions must map EVERY step in feature file
-- Add meaningful comments
-- Make code production ready"""
+  Scenario: [Negative scenario]
+    Given [precondition]
+    When [invalid action]
+    Then [error result]"""
 
 
 def get_summary_prompt(test_cases: list, feature: str) -> str:
-    tc_text = "\n".join([f"- {tc['Test Case Title']}" for tc in test_cases[:20]])
+    tc_text = "\n".join([
+        f"- {tc['Test Case Title']}"
+        for tc in test_cases[:20]
+    ])
     return f"""As a QA Test Lead, write a professional test summary report for:
 
 Feature: {feature}
@@ -381,16 +421,23 @@ Concise and suitable for QA Manager review."""
 
 
 # ===============================
-# 📊 PARSE CSV
+# 📊 PARSE & CSV
 # ===============================
 def parse_test_cases_to_list(raw_text: str) -> list:
     test_cases = []
+
     if "---CSV START---" in raw_text and "---CSV END---" in raw_text:
-        csv_section = raw_text.split("---CSV START---")[1].split("---CSV END---")[0].strip()
+        csv_section = (
+            raw_text.split("---CSV START---")[1]
+            .split("---CSV END---")[0]
+            .strip()
+        )
         lines = csv_section.split("\n")
         for line in lines:
             line = line.strip()
-            if not line or line.lower().startswith("test case title"):
+            if not line:
+                continue
+            if line.lower().startswith("test case title"):
                 continue
             try:
                 reader = csv.reader([line])
@@ -419,7 +466,10 @@ def parse_test_cases_to_list(raw_text: str) -> list:
         line = line.strip()
         if not line:
             continue
-        if line.lower().startswith("test case title") and "steps to reproduce" in line.lower():
+        if (
+            line.lower().startswith("test case title")
+            and "steps to reproduce" in line.lower()
+        ):
             csv_started = True
             continue
         if csv_started:
@@ -443,12 +493,46 @@ def parse_test_cases_to_list(raw_text: str) -> list:
                             })
             except Exception:
                 continue
+    if test_cases:
+        return test_cases
+
+    current_title = ""
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        if (
+            ("verify" in line.lower() or "validate" in line.lower()
+             or "test case title:" in line.lower())
+            and "|" not in line
+            and len(line) > 15
+        ):
+            current_title = line.replace("Test Case Title:", "").strip("*#-_ :")
+        elif "|" in line and current_title:
+            parts = line.split("|", 1)
+            if len(parts) == 2:
+                step = parts[0].strip().strip("*- ")
+                expected = parts[1].strip().strip("*- ")
+                if step and expected and len(step) > 5:
+                    test_cases.append({
+                        "Test Case Title": current_title,
+                        "Steps to Reproduce": step,
+                        "Expected Result": expected,
+                        "Actual Result": "",
+                        "Status": "Not Executed",
+                    })
     return test_cases
 
 
 def generate_csv(test_cases: list) -> bytes:
     output = io.StringIO()
-    fieldnames = ["Test Case Title", "Steps to Reproduce", "Expected Result", "Actual Result", "Status"]
+    fieldnames = [
+        "Test Case Title",
+        "Steps to Reproduce",
+        "Expected Result",
+        "Actual Result",
+        "Status",
+    ]
     writer = csv.DictWriter(output, fieldnames=fieldnames)
     writer.writeheader()
     prev_title = ""
@@ -479,21 +563,8 @@ def extract_display_text(reply: str) -> str:
     return "\n".join(clean_lines).strip()
 
 
-def parse_multi_file_response(reply: str) -> dict:
-    """Parse response with ===FILE: filename=== separators into dict of {filename: content}"""
-    files = {}
-    parts = reply.split("===FILE:")
-    for part in parts[1:]:
-        lines = part.strip().split("\n")
-        filename = lines[0].replace("===", "").strip()
-        content = "\n".join(lines[1:]).strip()
-        if filename and content:
-            files[filename] = content
-    return files
-
-
 # ===============================
-# 🗂️ RENDERED BLOCKS
+# 🗂️ RENDERED BLOCKS HELPERS
 # ===============================
 def push_block(block: dict):
     st.session_state.rendered_blocks.append(block)
@@ -510,75 +581,57 @@ def render_block(block: dict, idx: int):
         with st.chat_message("assistant"):
             st.markdown(block["display_text"])
             unique_titles = list(dict.fromkeys(
-                tc["Test Case Title"] for tc in block["parsed"] if tc.get("Test Case Title")
+                tc["Test Case Title"]
+                for tc in block["parsed"]
+                if tc.get("Test Case Title")
             ))
-            st.success(f"✅ {len(unique_titles)} test cases generated! Full steps + expected in CSV below.")
+            st.success(
+                f"✅ {len(unique_titles)} test cases generated! "
+                "Full steps + expected in CSV below."
+            )
             st.download_button(
-                label=f"📊 Download Excel CSV ({len(unique_titles)} TCs, {len(block['parsed'])} rows)",
-                data=block["csv_bytes"], file_name=block["csv_filename"],
-                mime="text/csv", key=f"dl_csv_{idx}",
+                label=(
+                    f"📊 Download Excel CSV "
+                    f"({len(unique_titles)} TCs, {len(block['parsed'])} rows)"
+                ),
+                data=block["csv_bytes"],
+                file_name=block["csv_filename"],
+                mime="text/csv",
+                key=f"dl_csv_{idx}",
             )
             render_dashboard(block["dashboard"], block["feature"])
 
     elif btype == "selenium_result":
         with st.chat_message("assistant"):
-            files = block.get("files", {})
-            if files:
-                st.markdown("### 🤖 Selenium TestNG — Generated Files")
-                st.info("📦 Download ZIP contains all 4 files ready to use in your Java project!")
-                st.download_button(
-                    label="📦 Download All Files (ZIP)",
-                    data=block["zip_bytes"],
-                    file_name=block["zip_filename"],
-                    mime="application/zip",
-                    key=f"dl_selenium_zip_{idx}",
-                )
-                st.markdown("---")
-                for fname, content in files.items():
-                    lang = "xml" if fname.endswith(".xml") else "java"
-                    with st.expander(f"📄 {fname}"):
-                        st.code(content, language=lang)
-            else:
-                st.markdown(block["content"])
-                st.download_button(
-                    label="💾 Download .java file",
-                    data=block["java_bytes"], file_name=block["java_filename"],
-                    mime="text/plain", key=f"dl_java_{idx}",
-                )
+            st.markdown(block["content"])
+            st.download_button(
+                label="💾 Download .java file",
+                data=block["java_bytes"],
+                file_name=block["java_filename"],
+                mime="text/plain",
+                key=f"dl_java_{idx}",
+            )
 
     elif btype == "bdd_result":
         with st.chat_message("assistant"):
-            files = block.get("files", {})
-            if files:
-                st.markdown("### 📝 Cucumber BDD — Generated Files")
-                st.info("📦 Download ZIP contains all 4 files ready to use in your Java project!")
-                st.download_button(
-                    label="📦 Download All Files (ZIP)",
-                    data=block["zip_bytes"],
-                    file_name=block["zip_filename"],
-                    mime="application/zip",
-                    key=f"dl_bdd_zip_{idx}",
-                )
-                st.markdown("---")
-                for fname, content in files.items():
-                    lang = "gherkin" if fname.endswith(".feature") else "xml" if fname.endswith(".xml") else "java"
-                    with st.expander(f"📄 {fname}"):
-                        st.code(content, language=lang)
-            else:
-                st.code(block["content"], language="gherkin")
-                st.download_button(
-                    label="💾 Download .feature file",
-                    data=block["feature_bytes"], file_name=block["feature_filename"],
-                    mime="text/plain", key=f"dl_bdd_{idx}",
-                )
+            st.code(block["content"], language="gherkin")
+            st.download_button(
+                label="💾 Download .feature file",
+                data=block["feature_bytes"],
+                file_name=block["feature_filename"],
+                mime="text/plain",
+                key=f"dl_bdd_{idx}",
+            )
 
     elif btype == "report_result":
         with st.chat_message("assistant"):
             st.markdown(block["content"])
             st.download_button(
                 label="💾 Download Report (.txt)",
-                data=block["report_bytes"], file_name=block["report_filename"],
-                mime="text/plain", key=f"dl_report_{idx}",
+                data=block["report_bytes"],
+                file_name=block["report_filename"],
+                mime="text/plain",
+                key=f"dl_report_{idx}",
             )
 
     elif btype == "warning":
@@ -641,12 +694,12 @@ sidebar_action = None
 
 if st.sidebar.button("📋 Generate Test Cases", use_container_width=True):
     sidebar_action = "generate_tc"
-if st.sidebar.button("🤖 Generate Selenium (TestNG)", use_container_width=True):
+if st.sidebar.button("🤖 Generate Selenium Code", use_container_width=True):
     sidebar_action = "generate_selenium"
-if st.sidebar.button("📝 Generate BDD (Cucumber)", use_container_width=True):
-    sidebar_action = "generate_bdd"
 if st.sidebar.button("🖼️ Analyze Screenshot", use_container_width=True):
     sidebar_action = "analyze_screenshot"
+if st.sidebar.button("📝 BDD Scenarios", use_container_width=True):
+    sidebar_action = "generate_bdd"
 if st.sidebar.button("📄 Test Summary Report", use_container_width=True):
     sidebar_action = "summary_report"
 
@@ -658,25 +711,31 @@ if st.session_state.dl_csv_data:
         label=st.session_state.dl_csv_label or "📊 Download CSV",
         data=st.session_state.dl_csv_data,
         file_name=st.session_state.dl_csv_filename or "test_cases.csv",
-        mime="text/csv", use_container_width=True, key="sidebar_dl_csv",
+        mime="text/csv",
+        use_container_width=True,
+        key="sidebar_dl_csv",
     )
 else:
     st.sidebar.info("Generate test cases to enable download")
 
 if st.session_state.dl_selenium_data:
     st.sidebar.download_button(
-        label="📦 Download Selenium ZIP",
+        label="💾 Download Selenium .java",
         data=st.session_state.dl_selenium_data,
-        file_name=st.session_state.dl_selenium_filename or "selenium_tests.zip",
-        mime="application/zip", use_container_width=True, key="sidebar_dl_selenium",
+        file_name=st.session_state.dl_selenium_filename or "selenium_tests.java",
+        mime="text/plain",
+        use_container_width=True,
+        key="sidebar_dl_java",
     )
 
 if st.session_state.dl_bdd_data:
     st.sidebar.download_button(
-        label="📦 Download BDD ZIP",
+        label="💾 Download BDD .feature",
         data=st.session_state.dl_bdd_data,
-        file_name=st.session_state.dl_bdd_filename or "bdd_tests.zip",
-        mime="application/zip", use_container_width=True, key="sidebar_dl_bdd",
+        file_name=st.session_state.dl_bdd_filename or "tests.feature",
+        mime="text/plain",
+        use_container_width=True,
+        key="sidebar_dl_bdd",
     )
 
 if st.session_state.dl_report_data:
@@ -684,7 +743,9 @@ if st.session_state.dl_report_data:
         label="💾 Download Report .txt",
         data=st.session_state.dl_report_data,
         file_name=st.session_state.dl_report_filename or "report.txt",
-        mime="text/plain", use_container_width=True, key="sidebar_dl_report",
+        mime="text/plain",
+        use_container_width=True,
+        key="sidebar_dl_report",
     )
 
 st.sidebar.markdown("---")
@@ -716,9 +777,9 @@ with col2:
     st.markdown("<br>", unsafe_allow_html=True)
     btn_tc = st.button("📋 Test Cases", use_container_width=True, type="primary")
     st.markdown("<br>", unsafe_allow_html=True)
-    btn_selenium = st.button("🤖 Selenium TestNG", use_container_width=True)
+    btn_selenium = st.button("🤖 Selenium Java", use_container_width=True)
     st.markdown("<br>", unsafe_allow_html=True)
-    btn_bdd = st.button("📝 BDD Cucumber", use_container_width=True)
+    btn_bdd = st.button("📝 BDD Scenarios", use_container_width=True)
     st.markdown("<br>", unsafe_allow_html=True)
     btn_screenshot = st.button("🖼️ From Screenshot", use_container_width=True)
     st.markdown("<br>", unsafe_allow_html=True)
@@ -726,6 +787,7 @@ with col2:
 
 st.divider()
 st.markdown("### 💬 Results")
+
 render_all_blocks()
 
 
@@ -739,6 +801,7 @@ def handle_generate_tc(ac_text: str, feature: str):
 
     prompt = get_testcase_prompt(ac_text, feature)
     user_msg = f"**📋 Generate Test Cases for:** {feature}\n\n**Details:**\n{ac_text[:300]}..."
+
     push_block({"type": "chat", "role": "user", "content": user_msg})
     st.session_state.chat_history.append({"role": "user", "content": user_msg})
 
@@ -747,9 +810,10 @@ def handle_generate_tc(ac_text: str, feature: str):
             "role": "system",
             "content": (
                 "You are a QA expert. "
-                "Go DIRECTLY to CSV — do NOT list titles before CSV. "
+                "Show test case titles as numbered list. "
+                "ALWAYS generate full CSV after titles. "
                 "CSV starts with ---CSV START--- and ends with ---CSV END---. "
-                "NEVER skip the CSV section. NEVER stop mid test case. "
+                "NEVER skip the CSV section. "
                 "4 columns: Test Case Title, Steps to Reproduce, Expected Result, Actual Result. "
                 "7 login steps first, then 2-3 nav steps, then final verification. "
                 "Expected Result = User should be able to... "
@@ -762,15 +826,6 @@ def handle_generate_tc(ac_text: str, feature: str):
     with st.spinner("🔍 Generating test cases..."):
         reply = call_groq(messages)
 
-        # If CSV got cut off, request continuation
-        if "---CSV START---" in reply and "---CSV END---" not in reply:
-            continuation_messages = messages + [
-                {"role": "assistant", "content": reply},
-                {"role": "user", "content": "Continue from exactly where you left off. Complete all remaining test cases and end with ---CSV END---. Do NOT repeat rows already written."},
-            ]
-            continuation = call_groq(continuation_messages)
-            reply = reply + "\n" + continuation
-
     display_text = extract_display_text(reply)
     parsed = parse_test_cases_to_list(reply)
     st.session_state.last_reply = reply
@@ -780,21 +835,32 @@ def handle_generate_tc(ac_text: str, feature: str):
     if parsed:
         st.session_state.last_test_cases = parsed
         csv_bytes = generate_csv(parsed)
-        unique_titles = list(dict.fromkeys(tc["Test Case Title"] for tc in parsed if tc.get("Test Case Title")))
+        unique_titles = list(dict.fromkeys(
+            tc["Test Case Title"] for tc in parsed if tc.get("Test Case Title")
+        ))
         fname = feature.replace(" ", "_")
         csv_filename = f"{fname}_test_cases.csv"
         dash = compute_dashboard(parsed, ac_text)
+
         st.session_state.dl_csv_data = csv_bytes
         st.session_state.dl_csv_filename = csv_filename
         st.session_state.dl_csv_label = f"📊 Download CSV ({len(unique_titles)} TCs)"
+
         push_block({
-            "type": "tc_result", "display_text": display_text,
-            "parsed": parsed, "csv_bytes": csv_bytes,
-            "csv_filename": csv_filename, "dashboard": dash, "feature": feature,
+            "type": "tc_result",
+            "display_text": display_text,
+            "parsed": parsed,
+            "csv_bytes": csv_bytes,
+            "csv_filename": csv_filename,
+            "dashboard": dash,
+            "feature": feature,
         })
     else:
         push_block({"type": "chat", "role": "assistant", "content": display_text})
-        push_block({"type": "warning", "content": "⚠️ Could not parse structured test cases. Raw output shown above."})
+        push_block({
+            "type": "warning",
+            "content": "⚠️ Could not parse structured test cases. Raw output shown above.",
+        })
 
     st.session_state.chat_history.append({"role": "assistant", "content": display_text})
     st.rerun()
@@ -805,9 +871,14 @@ def handle_generate_selenium(ac_text: str, feature: str):
         st.warning("⚠️ Please paste ticket details first!")
         return
 
-    tc_context = "\n".join([tc["Test Case Title"] for tc in st.session_state.last_test_cases[:10]]) if st.session_state.last_test_cases else ""
-    prompt = get_selenium_prompt(ac_text, tc_context, feature)
-    user_msg = f"**🤖 Generate Selenium TestNG Code for:** {feature}"
+    tc_context = "\n".join([
+        tc["Test Case Title"]
+        for tc in st.session_state.last_test_cases[:10]
+    ]) if st.session_state.last_test_cases else ""
+
+    prompt = get_selenium_prompt(ac_text, tc_context)
+    user_msg = f"**🤖 Generate Selenium Java Code for:** {feature}"
+
     push_block({"type": "chat", "role": "user", "content": user_msg})
     st.session_state.chat_history.append({"role": "user", "content": user_msg})
 
@@ -816,105 +887,27 @@ def handle_generate_selenium(ac_text: str, feature: str):
             "role": "system",
             "content": (
                 "You are a Senior Selenium Automation Engineer. "
-                "Generate ALL 4 files separated by ===FILE: filename=== markers. "
-                "Files needed: PageObject.java, TestNGTest.java, testng.xml, pom.xml. "
-                "Make code complete and production ready."
+                "Generate clean production-ready Java code using TestNG and Page Object Model."
             ),
         },
         {"role": "user", "content": prompt},
     ]
 
-    with st.spinner("⚙️ Generating Selenium TestNG files..."):
+    with st.spinner("⚙️ Generating Selenium Java..."):
         reply = call_groq(messages)
 
-    files = parse_multi_file_response(reply)
-    fname = feature.replace(" ", "_")
+    java_bytes = reply.encode("utf-8")
+    java_filename = f"{feature.replace(' ', '_')}_selenium.java"
 
-    if files:
-        zip_bytes = create_zip(files)
-        zip_filename = f"{fname}_selenium_testng.zip"
-        st.session_state.dl_selenium_data = zip_bytes
-        st.session_state.dl_selenium_filename = zip_filename
-        push_block({
-            "type": "selenium_result",
-            "files": files,
-            "zip_bytes": zip_bytes,
-            "zip_filename": zip_filename,
-            "content": reply,
-            "java_bytes": reply.encode("utf-8"),
-            "java_filename": f"{fname}_selenium.java",
-        })
-    else:
-        java_bytes = reply.encode("utf-8")
-        java_filename = f"{fname}_selenium.java"
-        st.session_state.dl_selenium_data = java_bytes
-        st.session_state.dl_selenium_filename = java_filename
-        push_block({
-            "type": "selenium_result", "files": {},
-            "content": reply, "java_bytes": java_bytes, "java_filename": java_filename,
-            "zip_bytes": b"", "zip_filename": "",
-        })
+    st.session_state.dl_selenium_data = java_bytes
+    st.session_state.dl_selenium_filename = java_filename
 
-    st.session_state.chat_history.append({"role": "assistant", "content": reply})
-    st.rerun()
-
-
-def handle_generate_bdd(ac_text: str, feature: str):
-    if not ac_text.strip():
-        st.warning("⚠️ Please paste ticket details first!")
-        return
-
-    prompt = get_bdd_prompt(ac_text, feature)
-    user_msg = f"**📝 Generate BDD Cucumber Code for:** {feature}"
-    push_block({"type": "chat", "role": "user", "content": user_msg})
-    st.session_state.chat_history.append({"role": "user", "content": user_msg})
-
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are a Senior BDD Automation Engineer. "
-                "Generate ALL 4 files separated by ===FILE: filename=== markers. "
-                "Files needed: .feature file, StepDefinitions.java, PageObject.java, pom.xml. "
-                "Every step in feature file MUST have a matching method in StepDefinitions.java. "
-                "Make code complete and production ready."
-            ),
-        },
-        {"role": "user", "content": prompt},
-    ]
-
-    with st.spinner("📝 Generating BDD Cucumber files..."):
-        reply = call_groq(messages)
-
-    files = parse_multi_file_response(reply)
-    fname = feature.replace(" ", "_")
-
-    if files:
-        zip_bytes = create_zip(files)
-        zip_filename = f"{fname}_bdd_cucumber.zip"
-        st.session_state.dl_bdd_data = zip_bytes
-        st.session_state.dl_bdd_filename = zip_filename
-        push_block({
-            "type": "bdd_result",
-            "files": files,
-            "zip_bytes": zip_bytes,
-            "zip_filename": zip_filename,
-            "content": reply,
-            "feature_bytes": reply.encode("utf-8"),
-            "feature_filename": f"{fname}.feature",
-        })
-    else:
-        feature_bytes = reply.encode("utf-8")
-        feature_filename = f"{fname}.feature"
-        st.session_state.dl_bdd_data = feature_bytes
-        st.session_state.dl_bdd_filename = feature_filename
-        push_block({
-            "type": "bdd_result", "files": {},
-            "content": reply, "feature_bytes": feature_bytes,
-            "feature_filename": feature_filename,
-            "zip_bytes": b"", "zip_filename": "",
-        })
-
+    push_block({
+        "type": "selenium_result",
+        "content": reply,
+        "java_bytes": java_bytes,
+        "java_filename": java_filename,
+    })
     st.session_state.chat_history.append({"role": "assistant", "content": reply})
     st.rerun()
 
@@ -930,8 +923,17 @@ def handle_analyze_screenshot(ac_text: str, feature: str):
 
     with st.spinner("🔍 Step 1/2: Analyzing screenshot..."):
         vision_messages = [
-            {"role": "system", "content": "You are an expert UI analyst. Describe every UI element you see in the screenshot in detail."},
-            {"role": "user", "content": "Analyze this UI screenshot carefully and list ALL UI elements you can see."},
+            {
+                "role": "system",
+                "content": (
+                    "You are an expert UI analyst. "
+                    "Describe every UI element you see in the screenshot in detail."
+                ),
+            },
+            {
+                "role": "user",
+                "content": "Analyze this UI screenshot carefully and list ALL UI elements you can see.",
+            },
         ]
         ui_description = call_groq(vision_messages, images=st.session_state.images)
 
@@ -947,7 +949,8 @@ def handle_analyze_screenshot(ac_text: str, feature: str):
                 "role": "system",
                 "content": (
                     "You are a QA expert. "
-                    "Go DIRECTLY to CSV — do NOT list titles before CSV. "
+                    "Show test case titles as numbered list. "
+                    "ALWAYS generate full CSV after titles. "
                     "CSV starts with ---CSV START--- and ends with ---CSV END---. "
                     "NEVER skip the CSV section. "
                     "4 columns: Test Case Title, Steps to Reproduce, Expected Result, Actual Result. "
@@ -959,9 +962,20 @@ def handle_analyze_screenshot(ac_text: str, feature: str):
             {"role": "user", "content": tc_prompt},
         ]
         try:
-            headers = {"Authorization": f"Bearer {GROQ_KEY}", "Content-Type": "application/json"}
-            payload = {"model": "llama-3.3-70b-versatile", "messages": tc_messages, "max_tokens": 8000, "temperature": 0.3}
-            resp = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, timeout=120)
+            headers = {
+                "Authorization": f"Bearer {GROQ_KEY}",
+                "Content-Type": "application/json",
+            }
+            payload = {
+                "model": "llama-3.3-70b-versatile",
+                "messages": tc_messages,
+                "max_tokens": 7000,
+                "temperature": 0.3,
+            }
+            resp = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers=headers, json=payload, timeout=120,
+            )
             resp.raise_for_status()
             reply = resp.json()["choices"][0]["message"]["content"]
         except Exception as e:
@@ -977,24 +991,72 @@ def handle_analyze_screenshot(ac_text: str, feature: str):
     if parsed:
         st.session_state.last_test_cases = parsed
         csv_bytes = generate_csv(parsed)
-        unique_titles = list(dict.fromkeys(tc["Test Case Title"] for tc in parsed if tc.get("Test Case Title")))
+        unique_titles = list(dict.fromkeys(
+            tc["Test Case Title"] for tc in parsed if tc.get("Test Case Title")
+        ))
         fname = f"{feature.replace(' ', '_')}_screenshot"
         csv_filename = f"{fname}_test_cases.csv"
         dash = compute_dashboard(parsed, screenshot_ac)
+
         st.session_state.dl_csv_data = csv_bytes
         st.session_state.dl_csv_filename = csv_filename
         st.session_state.dl_csv_label = f"📊 Download CSV ({len(unique_titles)} TCs)"
+
         push_block({
-            "type": "tc_result", "display_text": display_text,
-            "parsed": parsed, "csv_bytes": csv_bytes,
-            "csv_filename": csv_filename, "dashboard": dash,
+            "type": "tc_result",
+            "display_text": display_text,
+            "parsed": parsed,
+            "csv_bytes": csv_bytes,
+            "csv_filename": csv_filename,
+            "dashboard": dash,
             "feature": f"{feature} (Screenshot)",
         })
     else:
         push_block({"type": "chat", "role": "assistant", "content": display_text})
-        push_block({"type": "warning", "content": "⚠️ Could not parse structured test cases. Raw output shown above."})
+        push_block({
+            "type": "warning",
+            "content": "⚠️ Could not parse structured test cases. Raw output shown above.",
+        })
 
     st.session_state.chat_history.append({"role": "assistant", "content": display_text})
+    st.rerun()
+
+
+def handle_generate_bdd(ac_text: str, feature: str):
+    if not ac_text.strip():
+        st.warning("⚠️ Please paste ticket details first!")
+        return
+
+    prompt = get_bdd_prompt(ac_text)
+    user_msg = f"**📝 BDD Scenarios for:** {feature}"
+
+    push_block({"type": "chat", "role": "user", "content": user_msg})
+    st.session_state.chat_history.append({"role": "user", "content": user_msg})
+
+    messages = [
+        {
+            "role": "system",
+            "content": "You are a BDD expert. Generate clear Gherkin scenarios.",
+        },
+        {"role": "user", "content": prompt},
+    ]
+
+    with st.spinner("📝 Generating BDD..."):
+        reply = call_groq(messages)
+
+    feature_bytes = reply.encode("utf-8")
+    feature_filename = f"{feature.replace(' ', '_')}.feature"
+
+    st.session_state.dl_bdd_data = feature_bytes
+    st.session_state.dl_bdd_filename = feature_filename
+
+    push_block({
+        "type": "bdd_result",
+        "content": reply,
+        "feature_bytes": feature_bytes,
+        "feature_filename": feature_filename,
+    })
+    st.session_state.chat_history.append({"role": "assistant", "content": reply})
     st.rerun()
 
 
@@ -1005,11 +1067,18 @@ def handle_summary_report(ac_text: str, feature: str):
 
     prompt = get_summary_prompt(st.session_state.last_test_cases, feature)
     user_msg = f"**📄 Test Summary Report for:** {feature}"
+
     push_block({"type": "chat", "role": "user", "content": user_msg})
     st.session_state.chat_history.append({"role": "user", "content": user_msg})
 
     messages = [
-        {"role": "system", "content": "You are a QA Test Lead writing professional reports for QA Managers. Be concise and professional."},
+        {
+            "role": "system",
+            "content": (
+                "You are a QA Test Lead writing professional reports for QA Managers. "
+                "Be concise and professional."
+            ),
+        },
         {"role": "user", "content": prompt},
     ]
 
@@ -1018,11 +1087,15 @@ def handle_summary_report(ac_text: str, feature: str):
 
     report_bytes = reply.encode("utf-8")
     report_filename = f"{feature.replace(' ', '_')}_report.txt"
+
     st.session_state.dl_report_data = report_bytes
     st.session_state.dl_report_filename = report_filename
+
     push_block({
-        "type": "report_result", "content": reply,
-        "report_bytes": report_bytes, "report_filename": report_filename,
+        "type": "report_result",
+        "content": reply,
+        "report_bytes": report_bytes,
+        "report_filename": report_filename,
     })
     st.session_state.chat_history.append({"role": "assistant", "content": reply})
     st.rerun()
@@ -1047,10 +1120,10 @@ elif sidebar_action == "generate_tc":
     handle_generate_tc(ac_input, active_feature)
 elif sidebar_action == "generate_selenium":
     handle_generate_selenium(ac_input, active_feature)
-elif sidebar_action == "generate_bdd":
-    handle_generate_bdd(ac_input, active_feature)
 elif sidebar_action == "analyze_screenshot":
     handle_analyze_screenshot(ac_input, active_feature)
+elif sidebar_action == "generate_bdd":
+    handle_generate_bdd(ac_input, active_feature)
 elif sidebar_action == "summary_report":
     handle_summary_report(ac_input, active_feature)
 
@@ -1081,7 +1154,8 @@ if user_prompt:
         api_messages.append(msg)
 
     use_image = st.session_state.images and any(
-        w in user_prompt.lower() for w in ["image", "screenshot", "screen", "this", "describe", "analyze"]
+        w in user_prompt.lower()
+        for w in ["image", "screenshot", "screen", "this", "describe", "analyze"]
     )
 
     with st.spinner("Thinking..."):

@@ -7,6 +7,7 @@ import base64
 import os
 import io
 import csv
+import zipfile
 
 # ---------- LOAD ENV ----------
 load_dotenv()
@@ -155,11 +156,31 @@ def call_groq(messages: list, images: list = None) -> str:
 # 🔑 SINGLE SOURCE OF TRUTH: is_negative_title
 # ===============================
 def is_negative_title(title: str) -> bool:
-    """
-    A test case is NEGATIVE if and only if its title contains 'not able'.
-    Used everywhere so dashboard counts and badge labels always match.
-    """
     return "not able" in title.lower()
+
+
+# ===============================
+# 📦 ZIP HELPER
+# ===============================
+def create_zip(files: dict) -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for filename, content in files.items():
+            zf.writestr(filename, content)
+    return buf.getvalue()
+
+
+def parse_multi_file_response(reply: str) -> dict:
+    """Parse ===FILE: filename=== separated response into {filename: content}"""
+    files = {}
+    parts = reply.split("===FILE:")
+    for part in parts[1:]:
+        lines = part.strip().split("\n")
+        filename = lines[0].replace("===", "").strip()
+        content = "\n".join(lines[1:]).strip()
+        if filename and content:
+            files[filename] = content
+    return files
 
 
 # ===============================
@@ -209,7 +230,7 @@ def compute_dashboard(test_cases: list, ac_text: str) -> dict:
         "high": high,
         "med": med,
         "coverage_pct": coverage_pct,
-        "unique_titles": unique_titles[:8],
+        "unique_titles": unique_titles,
     }
 
 
@@ -349,52 +370,71 @@ Column 4 - Actual Result:
 - DO NOT skip the CSV section!"""
 
 
-def get_selenium_prompt(ac_text: str, tc_text: str = "") -> str:
+def get_selenium_prompt(ac_text: str, tc_text: str = "", feature: str = "Feature") -> str:
     return f"""Act as a Senior Selenium Automation Engineer.
 
-Generate complete Selenium Java code using:
-- TestNG framework
-- Page Object Model (POM)
-- WebDriverManager for driver setup
-- TestNG Assert for assertions
+Generate COMPLETE Selenium Java automation code for:
+Feature: {feature}
 
 Acceptance Criteria:
 {ac_text}
 
-{f"Test Cases context:{chr(10)}{tc_text}" if tc_text else ""}
+{f"Test Cases:{chr(10)}{tc_text}" if tc_text else ""}
 
-Generate:
-1. Page Object class with @FindBy WebElements and methods
-2. TestNG Test class with @BeforeClass @Test @AfterClass
-3. Both positive and negative test methods
-4. Login flow in @BeforeClass setup
-5. Meaningful method names and comments"""
+Generate ALL 4 files clearly separated using exactly this format:
+
+===FILE: PageObject.java===
+(Page Object Model — all @FindBy locators and action methods)
+
+===FILE: TestNGTest.java===
+(TestNG test class — @BeforeClass with login, @Test methods, @AfterClass)
+
+===FILE: testng.xml===
+(TestNG suite XML config)
+
+===FILE: pom.xml===
+(Maven pom with Selenium, TestNG, WebDriverManager dependencies)
+
+Rules:
+- Login URL: https://t1-aeg-qa-a.eluxmkt.com/der/de/b2b/pre-login/
+- Use WebDriverManager for driver setup
+- Use TestNG Assert for assertions
+- Include both positive and negative test methods
+- Add meaningful comments
+- Make code complete and production ready"""
 
 
-def get_bdd_prompt(ac_text: str) -> str:
-    return f"""Act as a BDD Expert. Convert to Gherkin format.
+def get_bdd_prompt(ac_text: str, feature: str = "Feature") -> str:
+    fname = feature.replace(" ", "")
+    return f"""Act as a Senior BDD Automation Engineer.
+
+Generate COMPLETE Cucumber BDD automation code for:
+Feature: {feature}
 
 Acceptance Criteria:
 {ac_text}
 
-Feature: [Feature Name]
+Generate ALL 4 files clearly separated using exactly this format:
 
-  Background:
-    Given user navigates to pre-login URL
-    And user clicks Partner link
-    And user is redirected to Prelogin page
-    And user clicks Login now
-    And user logs in with Chiron credentials
+===FILE: {fname}.feature===
+(Gherkin feature file — Background with login steps, positive and negative Scenarios)
 
-  Scenario: [Positive scenario]
-    Given [precondition]
-    When [action]
-    Then [expected result]
+===FILE: StepDefinitions.java===
+(Java step definitions — EVERY Given/When/Then step must have a matching @Given/@When/@Then method)
 
-  Scenario: [Negative scenario]
-    Given [precondition]
-    When [invalid action]
-    Then [error result]"""
+===FILE: PageObject.java===
+(Page Object Model — @FindBy locators and action methods)
+
+===FILE: pom.xml===
+(Maven pom with Selenium, Cucumber, TestNG, WebDriverManager dependencies)
+
+Rules:
+- Login URL: https://t1-aeg-qa-a.eluxmkt.com/der/de/b2b/pre-login/
+- Background must include full login flow
+- Every feature file step MUST have matching StepDefinitions method
+- Use @FindBy in PageObject
+- Add meaningful comments
+- Make code complete and production ready"""
 
 
 def get_summary_prompt(test_cases: list, feature: str) -> str:
@@ -603,25 +643,59 @@ def render_block(block: dict, idx: int):
 
     elif btype == "selenium_result":
         with st.chat_message("assistant"):
-            st.markdown(block["content"])
-            st.download_button(
-                label="💾 Download .java file",
-                data=block["java_bytes"],
-                file_name=block["java_filename"],
-                mime="text/plain",
-                key=f"dl_java_{idx}",
-            )
+            files = block.get("files", {})
+            if files:
+                st.markdown("### 🤖 Selenium TestNG — Generated Files")
+                st.info("📦 Download ZIP contains all 4 files ready for your Java project!")
+                st.download_button(
+                    label="📦 Download All Files (ZIP)",
+                    data=block["zip_bytes"],
+                    file_name=block["zip_filename"],
+                    mime="application/zip",
+                    key=f"dl_selenium_zip_{idx}",
+                )
+                st.markdown("---")
+                for fname, content in files.items():
+                    lang = "xml" if fname.endswith(".xml") else "java"
+                    with st.expander(f"📄 {fname}"):
+                        st.code(content, language=lang)
+            else:
+                st.markdown(block["content"])
+                st.download_button(
+                    label="💾 Download .java file",
+                    data=block["java_bytes"],
+                    file_name=block["java_filename"],
+                    mime="text/plain",
+                    key=f"dl_java_{idx}",
+                )
 
     elif btype == "bdd_result":
         with st.chat_message("assistant"):
-            st.code(block["content"], language="gherkin")
-            st.download_button(
-                label="💾 Download .feature file",
-                data=block["feature_bytes"],
-                file_name=block["feature_filename"],
-                mime="text/plain",
-                key=f"dl_bdd_{idx}",
-            )
+            files = block.get("files", {})
+            if files:
+                st.markdown("### 📝 Cucumber BDD — Generated Files")
+                st.info("📦 Download ZIP contains all 4 files ready for your Java project!")
+                st.download_button(
+                    label="📦 Download All Files (ZIP)",
+                    data=block["zip_bytes"],
+                    file_name=block["zip_filename"],
+                    mime="application/zip",
+                    key=f"dl_bdd_zip_{idx}",
+                )
+                st.markdown("---")
+                for fname, content in files.items():
+                    lang = "gherkin" if fname.endswith(".feature") else "xml" if fname.endswith(".xml") else "java"
+                    with st.expander(f"📄 {fname}"):
+                        st.code(content, language=lang)
+            else:
+                st.code(block["content"], language="gherkin")
+                st.download_button(
+                    label="💾 Download .feature file",
+                    data=block["feature_bytes"],
+                    file_name=block["feature_filename"],
+                    mime="text/plain",
+                    key=f"dl_bdd_{idx}",
+                )
 
     elif btype == "report_result":
         with st.chat_message("assistant"):
@@ -720,20 +794,20 @@ else:
 
 if st.session_state.dl_selenium_data:
     st.sidebar.download_button(
-        label="💾 Download Selenium .java",
+        label="📦 Download Selenium ZIP",
         data=st.session_state.dl_selenium_data,
-        file_name=st.session_state.dl_selenium_filename or "selenium_tests.java",
-        mime="text/plain",
+        file_name=st.session_state.dl_selenium_filename or "selenium.zip",
+        mime="application/zip",
         use_container_width=True,
-        key="sidebar_dl_java",
+        key="sidebar_dl_selenium",
     )
 
 if st.session_state.dl_bdd_data:
     st.sidebar.download_button(
-        label="💾 Download BDD .feature",
+        label="📦 Download BDD ZIP",
         data=st.session_state.dl_bdd_data,
-        file_name=st.session_state.dl_bdd_filename or "tests.feature",
-        mime="text/plain",
+        file_name=st.session_state.dl_bdd_filename or "bdd.zip",
+        mime="application/zip",
         use_container_width=True,
         key="sidebar_dl_bdd",
     )
@@ -876,8 +950,8 @@ def handle_generate_selenium(ac_text: str, feature: str):
         for tc in st.session_state.last_test_cases[:10]
     ]) if st.session_state.last_test_cases else ""
 
-    prompt = get_selenium_prompt(ac_text, tc_context)
-    user_msg = f"**🤖 Generate Selenium Java Code for:** {feature}"
+    prompt = get_selenium_prompt(ac_text, tc_context, feature)
+    user_msg = f"**🤖 Generate Selenium TestNG Code for:** {feature}"
 
     push_block({"type": "chat", "role": "user", "content": user_msg})
     st.session_state.chat_history.append({"role": "user", "content": user_msg})
@@ -887,27 +961,49 @@ def handle_generate_selenium(ac_text: str, feature: str):
             "role": "system",
             "content": (
                 "You are a Senior Selenium Automation Engineer. "
-                "Generate clean production-ready Java code using TestNG and Page Object Model."
+                "Generate ALL 4 files separated by ===FILE: filename=== markers. "
+                "Files needed: PageObject.java, TestNGTest.java, testng.xml, pom.xml. "
+                "Make code complete and production ready."
             ),
         },
         {"role": "user", "content": prompt},
     ]
 
-    with st.spinner("⚙️ Generating Selenium Java..."):
+    with st.spinner("⚙️ Generating Selenium TestNG files..."):
         reply = call_groq(messages)
 
-    java_bytes = reply.encode("utf-8")
-    java_filename = f"{feature.replace(' ', '_')}_selenium.java"
+    files = parse_multi_file_response(reply)
+    fname = feature.replace(" ", "_")
 
-    st.session_state.dl_selenium_data = java_bytes
-    st.session_state.dl_selenium_filename = java_filename
+    if files:
+        zip_bytes = create_zip(files)
+        zip_filename = f"{fname}_selenium_testng.zip"
+        st.session_state.dl_selenium_data = zip_bytes
+        st.session_state.dl_selenium_filename = zip_filename
+        push_block({
+            "type": "selenium_result",
+            "files": files,
+            "zip_bytes": zip_bytes,
+            "zip_filename": zip_filename,
+            "content": reply,
+            "java_bytes": reply.encode("utf-8"),
+            "java_filename": f"{fname}_selenium.java",
+        })
+    else:
+        java_bytes = reply.encode("utf-8")
+        java_filename = f"{fname}_selenium.java"
+        st.session_state.dl_selenium_data = java_bytes
+        st.session_state.dl_selenium_filename = java_filename
+        push_block({
+            "type": "selenium_result",
+            "files": {},
+            "content": reply,
+            "java_bytes": java_bytes,
+            "java_filename": java_filename,
+            "zip_bytes": b"",
+            "zip_filename": "",
+        })
 
-    push_block({
-        "type": "selenium_result",
-        "content": reply,
-        "java_bytes": java_bytes,
-        "java_filename": java_filename,
-    })
     st.session_state.chat_history.append({"role": "assistant", "content": reply})
     st.rerun()
 
@@ -1027,8 +1123,8 @@ def handle_generate_bdd(ac_text: str, feature: str):
         st.warning("⚠️ Please paste ticket details first!")
         return
 
-    prompt = get_bdd_prompt(ac_text)
-    user_msg = f"**📝 BDD Scenarios for:** {feature}"
+    prompt = get_bdd_prompt(ac_text, feature)
+    user_msg = f"**📝 Generate BDD Cucumber Code for:** {feature}"
 
     push_block({"type": "chat", "role": "user", "content": user_msg})
     st.session_state.chat_history.append({"role": "user", "content": user_msg})
@@ -1036,26 +1132,52 @@ def handle_generate_bdd(ac_text: str, feature: str):
     messages = [
         {
             "role": "system",
-            "content": "You are a BDD expert. Generate clear Gherkin scenarios.",
+            "content": (
+                "You are a Senior BDD Automation Engineer. "
+                "Generate ALL 4 files separated by ===FILE: filename=== markers. "
+                "Files needed: .feature file, StepDefinitions.java, PageObject.java, pom.xml. "
+                "Every step in feature file MUST have matching method in StepDefinitions.java. "
+                "Make code complete and production ready."
+            ),
         },
         {"role": "user", "content": prompt},
     ]
 
-    with st.spinner("📝 Generating BDD..."):
+    with st.spinner("📝 Generating BDD Cucumber files..."):
         reply = call_groq(messages)
 
-    feature_bytes = reply.encode("utf-8")
-    feature_filename = f"{feature.replace(' ', '_')}.feature"
+    files = parse_multi_file_response(reply)
+    fname = feature.replace(" ", "_")
 
-    st.session_state.dl_bdd_data = feature_bytes
-    st.session_state.dl_bdd_filename = feature_filename
+    if files:
+        zip_bytes = create_zip(files)
+        zip_filename = f"{fname}_bdd_cucumber.zip"
+        st.session_state.dl_bdd_data = zip_bytes
+        st.session_state.dl_bdd_filename = zip_filename
+        push_block({
+            "type": "bdd_result",
+            "files": files,
+            "zip_bytes": zip_bytes,
+            "zip_filename": zip_filename,
+            "content": reply,
+            "feature_bytes": reply.encode("utf-8"),
+            "feature_filename": f"{fname}.feature",
+        })
+    else:
+        feature_bytes = reply.encode("utf-8")
+        feature_filename = f"{fname}.feature"
+        st.session_state.dl_bdd_data = feature_bytes
+        st.session_state.dl_bdd_filename = feature_filename
+        push_block({
+            "type": "bdd_result",
+            "files": {},
+            "content": reply,
+            "feature_bytes": feature_bytes,
+            "feature_filename": feature_filename,
+            "zip_bytes": b"",
+            "zip_filename": "",
+        })
 
-    push_block({
-        "type": "bdd_result",
-        "content": reply,
-        "feature_bytes": feature_bytes,
-        "feature_filename": feature_filename,
-    })
     st.session_state.chat_history.append({"role": "assistant", "content": reply})
     st.rerun()
 

@@ -166,20 +166,13 @@ def compute_dashboard(test_cases: list, ac_text: str) -> dict:
         tc["Test Case Title"] for tc in test_cases
         if tc.get("Test Case Title")
     ))
-    positive = sum(
-        1 for title in unique_titles
-        if "not able" not in title.lower()
-        and "should not" not in title.lower()
-        and "unable" not in title.lower()
-        and "invalid" not in title.lower()
-    )
+
     negative = sum(
         1 for title in unique_titles
-        if "not able" in title.lower()
-        or "should not" in title.lower()
-        or "unable" in title.lower()
-        or "invalid" in title.lower()
+        if "not" in title.lower()
     )
+    positive = len(unique_titles) - negative
+
     high = sum(
         1 for t in unique_titles
         if any(word in t.lower() for word in [
@@ -189,6 +182,7 @@ def compute_dashboard(test_cases: list, ac_text: str) -> dict:
         ])
     )
     med = max(0, len(unique_titles) - high)
+
     ac_lines = [
         l.strip() for l in ac_text.split("\n")
         if l.strip() and len(l.strip()) > 10
@@ -205,8 +199,10 @@ def compute_dashboard(test_cases: list, ac_text: str) -> dict:
                 covered += 1
                 break
     coverage_pct = int((covered / max(len(ac_lines), 1)) * 100)
+
     all_titles = [tc.get("Test Case Title", "") for tc in test_cases]
     duplicates = len(all_titles) - len(set(all_titles))
+
     return {
         "total": len(unique_titles),
         "positive": positive,
@@ -220,35 +216,10 @@ def compute_dashboard(test_cases: list, ac_text: str) -> dict:
     }
 
 
-def generate_suggestions(data: dict) -> list:
-    suggestions = []
-    if data["negative"] == 0:
-        suggestions.append(
-            "⚠️ No negative test cases found. "
-            "Add error handling and invalid input scenarios."
-        )
-    if data["coverage_pct"] < 80:
-        suggestions.append(
-            f"⚠️ Coverage is {data['coverage_pct']}%. "
-            "Some AC points may not be fully covered."
-        )
-    if data["total"] < 5:
-        suggestions.append(
-            "💡 Only a few steps generated. "
-            "Consider adding more edge case scenarios."
-        )
-    if not suggestions:
-        suggestions.append(
-            "✅ Great coverage! All positive and negative "
-            "scenarios are well covered. "
-            "Test suite looks comprehensive."
-        )
-    return suggestions
-
-
 def render_dashboard(data: dict, feature: str):
     st.markdown("---")
     st.markdown(f"### 📊 Live Dashboard — *{feature}*")
+
     c1, c2, c3, c4 = st.columns(4)
     with c1:
         st.markdown(f"""
@@ -279,9 +250,9 @@ def render_dashboard(data: dict, feature: str):
             <div class="metric-num" style="color:{color}">{data['coverage_pct']}%</div>
             <div class="metric-lbl">AC Coverage</div>
         </div>""", unsafe_allow_html=True)
+
     st.markdown("<br>", unsafe_allow_html=True)
-    col_left, col_right = st.columns(2)
-    with col_left:
+    with st.container():
         st.markdown("#### 🎯 Coverage Breakdown")
         pos_pct = int((data["positive"] / max(data["total"], 1)) * 100)
         neg_pct = int((data["negative"] / max(data["total"], 1)) * 100)
@@ -303,26 +274,7 @@ def render_dashboard(data: dict, feature: str):
                 f'<span class="badge-med">🟡 Medium: {data["med"]}</span>',
                 unsafe_allow_html=True,
             )
-    with col_right:
-        st.markdown("#### 🔍 AI Duplicate Detector")
-        if data["duplicates"] == 0:
-            st.markdown("""
-            <div class="ai-suggestion">
-                ✅ No duplicate test cases found.
-                All test cases cover unique scenarios.
-            </div>""", unsafe_allow_html=True)
-        else:
-            st.markdown(f"""
-            <div class="duplicate-alert">
-                ⚠️ {data['duplicates']} potential duplicate(s) detected.
-                Review and consolidate for cleaner test suite.
-            </div>""", unsafe_allow_html=True)
-        st.markdown("#### 💡 AI Smart Suggestions")
-        for s in generate_suggestions(data):
-            st.markdown(
-                f'<div class="ai-suggestion">{s}</div>',
-                unsafe_allow_html=True,
-            )
+
     st.markdown("#### 📋 Test Cases Generated")
     for i, title in enumerate(data["unique_titles"], 1):
         ptype = "neg" if "not" in title.lower() else "pos"
@@ -655,7 +607,7 @@ def extract_display_text(reply: str) -> str:
 
 
 # ===============================
-# 🗂️ RENDERED BLOCKS HELPERS
+# 🗂️ RENDERED BLOCKS
 # ===============================
 def push_block(block: dict):
     st.session_state.rendered_blocks.append(block)
@@ -1012,7 +964,7 @@ def handle_analyze_screenshot(ac_text: str, feature: str):
         st.rerun()
         return
 
-    # STEP 2: Structure extracted text as proper AC using Text model
+    # STEP 2: Structure extracted text as proper AC
     with st.spinner("📝 Step 2/3: Structuring extracted content as AC..."):
         structure_messages = [
             {
@@ -1043,7 +995,6 @@ def handle_analyze_screenshot(ac_text: str, feature: str):
         st.rerun()
         return
 
-    # Combine manual AC + screenshot AC if both provided
     if ac_text.strip():
         final_ac = f"{ac_text}\n\n--- Also extracted from screenshot ---\n{structured_ac}"
     else:

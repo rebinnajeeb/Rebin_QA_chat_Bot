@@ -169,7 +169,7 @@ def compute_dashboard(test_cases: list, ac_text: str) -> dict:
 
     negative = sum(
         1 for title in unique_titles
-        if "not" in title.lower()
+        if "not able to" in title.lower()
     )
     positive = len(unique_titles) - negative
 
@@ -277,7 +277,7 @@ def render_dashboard(data: dict, feature: str):
 
     st.markdown("#### 📋 Test Cases Generated")
     for i, title in enumerate(data["unique_titles"], 1):
-        ptype = "neg" if "not" in title.lower() else "pos"
+        ptype = "neg" if "not able to" in title.lower() else "pos"
         label = "Negative" if ptype == "neg" else "Positive"
         st.markdown(
             f'{i}. <span class="badge-{ptype}">{label}</span> {title}',
@@ -931,31 +931,24 @@ def handle_analyze_screenshot(ac_text: str, feature: str):
     push_block({"type": "chat", "role": "user", "content": user_msg})
     st.session_state.chat_history.append({"role": "user", "content": user_msg})
 
-    # STEP 1: Extract ALL text from screenshot using Vision model
     with st.spinner("🔍 Step 1/3: Extracting all text from screenshot..."):
         ocr_messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You are an expert OCR and content extraction engine. "
-                    "Your job is to extract EVERY piece of text visible in the screenshot "
-                    "exactly as it appears. This includes: page titles, headings, labels, "
-                    "button text, field names, error messages, descriptions, acceptance criteria, "
-                    "user stories, table content, dropdown options, placeholder text, "
-                    "tooltips, breadcrumbs, menu items, and any other visible text. "
-                    "Output ALL extracted text in a structured readable format. "
-                    "Do NOT summarize or skip anything. Extract everything word for word."
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    "Please extract ALL text visible in this screenshot exactly as it appears. "
-                    "Include every heading, label, button, field, description, acceptance criteria, "
-                    "user story, requirement, and any other text you can see. "
-                    "Do not summarize — give me the full raw text."
-                ),
-            },
+            {"role": "system", "content": (
+                "You are an expert OCR and content extraction engine. "
+                "Your job is to extract EVERY piece of text visible in the screenshot "
+                "exactly as it appears. This includes: page titles, headings, labels, "
+                "button text, field names, error messages, descriptions, acceptance criteria, "
+                "user stories, table content, dropdown options, placeholder text, "
+                "tooltips, breadcrumbs, menu items, and any other visible text. "
+                "Output ALL extracted text in a structured readable format. "
+                "Do NOT summarize or skip anything. Extract everything word for word."
+            )},
+            {"role": "user", "content": (
+                "Please extract ALL text visible in this screenshot exactly as it appears. "
+                "Include every heading, label, button, field, description, acceptance criteria, "
+                "user story, requirement, and any other text you can see. "
+                "Do not summarize — give me the full raw text."
+            )},
         ]
         extracted_text = call_groq(ocr_messages, images=st.session_state.images)
 
@@ -964,29 +957,22 @@ def handle_analyze_screenshot(ac_text: str, feature: str):
         st.rerun()
         return
 
-    # STEP 2: Structure extracted text as proper AC
     with st.spinner("📝 Step 2/3: Structuring extracted content as AC..."):
         structure_messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You are a Business Analyst. "
-                    "Given raw extracted text from a screenshot, "
-                    "identify and structure it as proper Acceptance Criteria. "
-                    "Extract: User Story, Requirements, Acceptance Criteria points. "
-                    "If the text already contains AC points, preserve them exactly. "
-                    "Format output as clean AC that can be used for test case generation."
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"Here is the raw text extracted from the screenshot:\n\n"
-                    f"{extracted_text}\n\n"
-                    f"Please structure this as proper Acceptance Criteria for test case generation. "
-                    f"Preserve all original requirements and AC points exactly."
-                ),
-            },
+            {"role": "system", "content": (
+                "You are a Business Analyst. "
+                "Given raw extracted text from a screenshot, "
+                "identify and structure it as proper Acceptance Criteria. "
+                "Extract: User Story, Requirements, Acceptance Criteria points. "
+                "If the text already contains AC points, preserve them exactly. "
+                "Format output as clean AC that can be used for test case generation."
+            )},
+            {"role": "user", "content": (
+                f"Here is the raw text extracted from the screenshot:\n\n"
+                f"{extracted_text}\n\n"
+                f"Please structure this as proper Acceptance Criteria for test case generation. "
+                f"Preserve all original requirements and AC points exactly."
+            )},
         ]
         structured_ac = call_groq(structure_messages)
 
@@ -1000,41 +986,25 @@ def handle_analyze_screenshot(ac_text: str, feature: str):
     else:
         final_ac = structured_ac
 
-    # STEP 3: Generate test cases from structured AC
     with st.spinner("📋 Step 3/3: Generating test cases from extracted content..."):
         tc_prompt = get_testcase_prompt(final_ac, feature)
         tc_messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You are a QA expert. "
-                    "Show test case titles as numbered list. "
-                    "ALWAYS generate full CSV after titles. "
-                    "CSV starts with ---CSV START--- and ends with ---CSV END---. "
-                    "NEVER skip the CSV section. "
-                    "4 columns: Test Case Title, Steps to Reproduce, Expected Result, Actual Result. "
-                    "Expected Result = User should be able to... "
-                    "Actual Result = User is able to... "
-                    "NEVER repeat login steps after step 7."
-                ),
-            },
+            {"role": "system", "content": (
+                "You are a QA expert. Show test case titles as numbered list. "
+                "ALWAYS generate full CSV after titles. "
+                "CSV starts with ---CSV START--- and ends with ---CSV END---. "
+                "NEVER skip the CSV section. "
+                "4 columns: Test Case Title, Steps to Reproduce, Expected Result, Actual Result. "
+                "Expected Result = User should be able to... "
+                "Actual Result = User is able to... "
+                "NEVER repeat login steps after step 7."
+            )},
             {"role": "user", "content": tc_prompt},
         ]
         try:
-            headers = {
-                "Authorization": f"Bearer {GROQ_KEY}",
-                "Content-Type": "application/json",
-            }
-            payload = {
-                "model": "llama-3.3-70b-versatile",
-                "messages": tc_messages,
-                "max_tokens": 7000,
-                "temperature": 0.3,
-            }
-            resp = requests.post(
-                "https://api.groq.com/openai/v1/chat/completions",
-                headers=headers, json=payload, timeout=120,
-            )
+            headers = {"Authorization": f"Bearer {GROQ_KEY}", "Content-Type": "application/json"}
+            payload = {"model": "llama-3.3-70b-versatile", "messages": tc_messages, "max_tokens": 7000, "temperature": 0.3}
+            resp = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, timeout=120)
             resp.raise_for_status()
             reply = resp.json()["choices"][0]["message"]["content"]
         except Exception as e:

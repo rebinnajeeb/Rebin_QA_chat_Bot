@@ -56,13 +56,6 @@ st.markdown("""
         color: #0a2540 !important;
         font-weight: 500 !important;
     }
-    .duplicate-alert {
-        background: #fff3cd; border-left: 4px solid #ffc107;
-        padding: 10px 14px; border-radius: 0 8px 8px 0;
-        font-size: 14px; margin: 8px 0;
-        color: #4a3800 !important;
-        font-weight: 500 !important;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -86,7 +79,6 @@ defaults = {
     "last_feature": "",
     "last_file_prefix": "",
     "last_action": "",
-    # ---- persistent download blobs ----
     "dl_csv_data": None,
     "dl_csv_filename": "",
     "dl_csv_label": "",
@@ -96,7 +88,6 @@ defaults = {
     "dl_bdd_filename": "",
     "dl_report_data": None,
     "dl_report_filename": "",
-    # ---- persistent rendered blocks ----
     "rendered_blocks": [],
 }
 for k, v in defaults.items():
@@ -161,6 +152,17 @@ def call_groq(messages: list, images: list = None) -> str:
 
 
 # ===============================
+# 🔑 SINGLE SOURCE OF TRUTH: is_negative_title
+# ===============================
+def is_negative_title(title: str) -> bool:
+    """
+    A test case is NEGATIVE if and only if its title contains 'not able'.
+    Used everywhere so dashboard counts and badge labels always match.
+    """
+    return "not able" in title.lower()
+
+
+# ===============================
 # 📊 DASHBOARD FUNCTIONS
 # ===============================
 def compute_dashboard(test_cases: list, ac_text: str) -> dict:
@@ -169,20 +171,9 @@ def compute_dashboard(test_cases: list, ac_text: str) -> dict:
         if tc.get("Test Case Title")
     ))
 
-    positive = sum(
-        1 for title in unique_titles
-        if "not able" not in title.lower()
-        and "should not" not in title.lower()
-        and "unable" not in title.lower()
-        and "invalid" not in title.lower()
-    )
-    negative = sum(
-        1 for title in unique_titles
-        if "not able" in title.lower()
-        or "should not" in title.lower()
-        or "unable" in title.lower()
-        or "invalid" in title.lower()
-    )
+    negative = sum(1 for t in unique_titles if is_negative_title(t))
+    positive = len(unique_titles) - negative
+
     high = sum(
         1 for t in unique_titles
         if any(word in t.lower() for word in [
@@ -210,9 +201,6 @@ def compute_dashboard(test_cases: list, ac_text: str) -> dict:
                 break
     coverage_pct = int((covered / max(len(ac_lines), 1)) * 100)
 
-    all_titles = [tc.get("Test Case Title", "") for tc in test_cases]
-    duplicates = len(all_titles) - len(set(all_titles))
-
     return {
         "total": len(unique_titles),
         "positive": positive,
@@ -221,39 +209,11 @@ def compute_dashboard(test_cases: list, ac_text: str) -> dict:
         "high": high,
         "med": med,
         "coverage_pct": coverage_pct,
-        "duplicates": duplicates,
         "unique_titles": unique_titles[:8],
     }
 
 
-def generate_suggestions(data: dict) -> list:
-    suggestions = []
-    if data["negative"] == 0:
-        suggestions.append(
-            "⚠️ No negative test cases found. "
-            "Add error handling and invalid input scenarios."
-        )
-    if data["coverage_pct"] < 80:
-        suggestions.append(
-            f"⚠️ Coverage is {data['coverage_pct']}%. "
-            "Some AC points may not be fully covered."
-        )
-    if data["total"] < 5:
-        suggestions.append(
-            "💡 Only a few steps generated. "
-            "Consider adding more edge case scenarios."
-        )
-    if not suggestions:
-        suggestions.append(
-            "✅ Great coverage! All positive and negative "
-            "scenarios are well covered. "
-            "Test suite looks comprehensive."
-        )
-    return suggestions
-
-
 def render_dashboard(data: dict, feature: str):
-    """Pure render — no session state writes. Safe to call on every rerun."""
     st.markdown("---")
     st.markdown(f"### 📊 Live Dashboard — *{feature}*")
 
@@ -289,59 +249,40 @@ def render_dashboard(data: dict, feature: str):
         </div>""", unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
-    col_left, col_right = st.columns(2)
 
-    with col_left:
-        st.markdown("#### 🎯 Coverage Breakdown")
-        pos_pct = int((data["positive"] / max(data["total"], 1)) * 100)
-        neg_pct = int((data["negative"] / max(data["total"], 1)) * 100)
-        st.markdown(f"**Positive cases** — {pos_pct}%")
-        st.progress(pos_pct / 100)
-        st.markdown(f"**Negative cases** — {neg_pct}%")
-        st.progress(neg_pct / 100)
-        st.markdown(f"**AC Coverage** — {data['coverage_pct']}%")
-        st.progress(data["coverage_pct"] / 100)
-        st.markdown("#### 🏷️ Priority Distribution")
-        p1, p2 = st.columns(2)
-        with p1:
-            st.markdown(
-                f'<span class="badge-high">🔴 High: {data["high"]}</span>',
-                unsafe_allow_html=True,
-            )
-        with p2:
-            st.markdown(
-                f'<span class="badge-med">🟡 Medium: {data["med"]}</span>',
-                unsafe_allow_html=True,
-            )
+    st.markdown("#### 🎯 Coverage Breakdown")
+    pos_pct = int((data["positive"] / max(data["total"], 1)) * 100)
+    neg_pct = int((data["negative"] / max(data["total"], 1)) * 100)
+    st.markdown(f"**Positive cases** — {pos_pct}%")
+    st.progress(pos_pct / 100)
+    st.markdown(f"**Negative cases** — {neg_pct}%")
+    st.progress(neg_pct / 100)
+    st.markdown(f"**AC Coverage** — {data['coverage_pct']}%")
+    st.progress(data["coverage_pct"] / 100)
 
-    with col_right:
-        st.markdown("#### 🔍 AI Duplicate Detector")
-        if data["duplicates"] == 0:
-            st.markdown("""
-            <div class="ai-suggestion">
-                ✅ No duplicate test cases found.
-                All test cases cover unique scenarios.
-            </div>""", unsafe_allow_html=True)
-        else:
-            st.markdown(f"""
-            <div class="duplicate-alert">
-                ⚠️ {data['duplicates']} potential duplicate(s) detected.
-                Review and consolidate for cleaner test suite.
-            </div>""", unsafe_allow_html=True)
-
-        st.markdown("#### 💡 AI Smart Suggestions")
-        for s in generate_suggestions(data):
-            st.markdown(
-                f'<div class="ai-suggestion">{s}</div>',
-                unsafe_allow_html=True,
-            )
+    st.markdown("#### 🏷️ Priority Distribution")
+    p1, p2 = st.columns(2)
+    with p1:
+        st.markdown(
+            f'<span class="badge-high">🔴 High: {data["high"]}</span>',
+            unsafe_allow_html=True,
+        )
+    with p2:
+        st.markdown(
+            f'<span class="badge-med">🟡 Medium: {data["med"]}</span>',
+            unsafe_allow_html=True,
+        )
 
     st.markdown("#### 📋 Test Cases Generated")
     for i, title in enumerate(data["unique_titles"], 1):
-        ptype = "neg" if "not" in title.lower() else "pos"
-        label = "Negative" if ptype == "neg" else "Positive"
+        if is_negative_title(title):
+            badge = "neg"
+            label = "Negative"
+        else:
+            badge = "pos"
+            label = "Positive"
         st.markdown(
-            f'{i}. <span class="badge-{ptype}">{label}</span> {title}',
+            f'{i}. <span class="badge-{badge}">{label}</span> {title}',
             unsafe_allow_html=True,
         )
 
@@ -428,48 +369,6 @@ Generate:
 3. Both positive and negative test methods
 4. Login flow in @BeforeClass setup
 5. Meaningful method names and comments"""
-
-
-def get_screenshot_tc_prompt() -> str:
-    return f"""You are a Technical Test Lead.
-Analyze this UI screenshot and generate test cases.
-
-EVERY test case MUST start with these 7 login steps in CSV:
-"Launch the following url https://t1-aeg-qa-a.eluxmkt.com/der/de/b2b/pre-login/","User should be able to launch the url","User is able to launch the url"
-"Click on the Partner link from the portal","User should be able to click on the partner link","User is able to Click on the partner link"
-"Verify that the user is redirected to Prelogin page","User should be able to view the Prelogin page","User is able to View the Prelogin page"
-"Verify whether the user is able to see Login now and Contact us Buttons","User should be able to see Login now and Contact us Buttons","User is able to View the Login now and Contact us Buttons"
-"Click on Login now from prelogin page","User should be able to click Login now button","User is able to Click on the login now button"
-"Verify it is redirected to SAML login page","User should be able to view the SAML login page","User is able to view the SAML login page"
-"Enter user credentials and login","User should be able to login and view Chiron home page","User is able to View the Chiron home page"
-
-{INTERMEDIATE_STEPS_INSTRUCTION}
-
-Generate 6-8 test cases based on UI elements in screenshot.
-
-First show titles:
-✅ Generated Test Cases:
-1. Verify whether user is able to [title]
-2. Verify whether user is not able to [title]
-
-Then IMMEDIATELY provide CSV:
----CSV START---
-Test Case Title,Steps to Reproduce,Expected Result,Actual Result
----CSV END---
-
-CSV Rules — 4 COLUMNS:
-Column 1 - Test Case Title: same title repeats for every step
-Column 2 - Steps to Reproduce: ACTION (Launch/Click/Navigate/Enter/Verify)
-Column 3 - Expected Result:
-  POSITIVE = "User should be able to [action]"
-  NEGATIVE = "User should not be able to [action]"
-Column 4 - Actual Result:
-  POSITIVE = "User is able to [action]"
-  NEGATIVE = "User is not able to [action]"
-- Include all 7 login steps for every TC
-- Then 2-3 navigation steps
-- Then final verification step
-- DO NOT skip the CSV section!"""
 
 
 def get_bdd_prompt(ac_text: str) -> str:
@@ -668,12 +567,10 @@ def extract_display_text(reply: str) -> str:
 # 🗂️ RENDERED BLOCKS HELPERS
 # ===============================
 def push_block(block: dict):
-    """Append a block to the persistent rendered-blocks list."""
     st.session_state.rendered_blocks.append(block)
 
 
 def render_block(block: dict, idx: int):
-    """Render a single block. idx makes widget keys unique across reruns."""
     btype = block["type"]
 
     if btype == "chat":
@@ -745,7 +642,6 @@ def render_block(block: dict, idx: int):
 
 
 def render_all_blocks():
-    """Replay all persistent blocks on every rerun."""
     for idx, block in enumerate(st.session_state.rendered_blocks):
         render_block(block, idx)
 
@@ -860,7 +756,7 @@ if st.sidebar.button("🗑️ Clear All", use_container_width=True):
 
 
 # ===============================
-# 🖥️ MAIN AREA — inputs
+# 🖥️ MAIN AREA
 # ===============================
 col1, col2 = st.columns([2, 1])
 
@@ -892,7 +788,6 @@ with col2:
 st.divider()
 st.markdown("### 💬 Results")
 
-# ---- Replay all persistent blocks on every rerun ----
 render_all_blocks()
 
 

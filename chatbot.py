@@ -86,6 +86,7 @@ defaults = {
     "last_feature": "",
     "last_file_prefix": "",
     "last_action": "",
+    # ---- persistent download blobs ----
     "dl_csv_data": None,
     "dl_csv_filename": "",
     "dl_csv_label": "",
@@ -95,6 +96,7 @@ defaults = {
     "dl_bdd_filename": "",
     "dl_report_data": None,
     "dl_report_filename": "",
+    # ---- persistent rendered blocks ----
     "rendered_blocks": [],
 }
 for k, v in defaults.items():
@@ -167,12 +169,20 @@ def compute_dashboard(test_cases: list, ac_text: str) -> dict:
         if tc.get("Test Case Title")
     ))
 
+    positive = sum(
+        1 for title in unique_titles
+        if "not able" not in title.lower()
+        and "should not" not in title.lower()
+        and "unable" not in title.lower()
+        and "invalid" not in title.lower()
+    )
     negative = sum(
         1 for title in unique_titles
-        if "not able to" in title.lower()
+        if "not able" in title.lower()
+        or "should not" in title.lower()
+        or "unable" in title.lower()
+        or "invalid" in title.lower()
     )
-    positive = len(unique_titles) - negative
-
     high = sum(
         1 for t in unique_titles
         if any(word in t.lower() for word in [
@@ -216,7 +226,34 @@ def compute_dashboard(test_cases: list, ac_text: str) -> dict:
     }
 
 
+def generate_suggestions(data: dict) -> list:
+    suggestions = []
+    if data["negative"] == 0:
+        suggestions.append(
+            "⚠️ No negative test cases found. "
+            "Add error handling and invalid input scenarios."
+        )
+    if data["coverage_pct"] < 80:
+        suggestions.append(
+            f"⚠️ Coverage is {data['coverage_pct']}%. "
+            "Some AC points may not be fully covered."
+        )
+    if data["total"] < 5:
+        suggestions.append(
+            "💡 Only a few steps generated. "
+            "Consider adding more edge case scenarios."
+        )
+    if not suggestions:
+        suggestions.append(
+            "✅ Great coverage! All positive and negative "
+            "scenarios are well covered. "
+            "Test suite looks comprehensive."
+        )
+    return suggestions
+
+
 def render_dashboard(data: dict, feature: str):
+    """Pure render — no session state writes. Safe to call on every rerun."""
     st.markdown("---")
     st.markdown(f"### 📊 Live Dashboard — *{feature}*")
 
@@ -252,7 +289,9 @@ def render_dashboard(data: dict, feature: str):
         </div>""", unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
-    with st.container():
+    col_left, col_right = st.columns(2)
+
+    with col_left:
         st.markdown("#### 🎯 Coverage Breakdown")
         pos_pct = int((data["positive"] / max(data["total"], 1)) * 100)
         neg_pct = int((data["negative"] / max(data["total"], 1)) * 100)
@@ -275,9 +314,31 @@ def render_dashboard(data: dict, feature: str):
                 unsafe_allow_html=True,
             )
 
+    with col_right:
+        st.markdown("#### 🔍 AI Duplicate Detector")
+        if data["duplicates"] == 0:
+            st.markdown("""
+            <div class="ai-suggestion">
+                ✅ No duplicate test cases found.
+                All test cases cover unique scenarios.
+            </div>""", unsafe_allow_html=True)
+        else:
+            st.markdown(f"""
+            <div class="duplicate-alert">
+                ⚠️ {data['duplicates']} potential duplicate(s) detected.
+                Review and consolidate for cleaner test suite.
+            </div>""", unsafe_allow_html=True)
+
+        st.markdown("#### 💡 AI Smart Suggestions")
+        for s in generate_suggestions(data):
+            st.markdown(
+                f'<div class="ai-suggestion">{s}</div>',
+                unsafe_allow_html=True,
+            )
+
     st.markdown("#### 📋 Test Cases Generated")
     for i, title in enumerate(data["unique_titles"], 1):
-        ptype = "neg" if "not able to" in title.lower() else "pos"
+        ptype = "neg" if "not" in title.lower() else "pos"
         label = "Negative" if ptype == "neg" else "Positive"
         st.markdown(
             f'{i}. <span class="badge-{ptype}">{label}</span> {title}',
@@ -348,12 +409,7 @@ Column 4 - Actual Result:
 
 
 def get_selenium_prompt(ac_text: str, tc_text: str = "") -> str:
-    tc_section = (
-        f"\n\n// Use these test case names as your @Test method names (do NOT list or repeat them, just use them silently as method name references):\n{tc_text}"
-        if tc_text else ""
-    )
     return f"""Act as a Senior Selenium Automation Engineer.
-IMPORTANT: Output ONLY Java code. Do NOT repeat, list, or summarize the test cases or acceptance criteria in your response.
 
 Generate complete Selenium Java code using:
 - TestNG framework
@@ -361,16 +417,17 @@ Generate complete Selenium Java code using:
 - WebDriverManager for driver setup
 - TestNG Assert for assertions
 
-Acceptance Criteria (use silently for logic only — do NOT echo this back):
-{ac_text}{tc_section}
+Acceptance Criteria:
+{ac_text}
+
+{f"Test Cases context:{chr(10)}{tc_text}" if tc_text else ""}
 
 Generate:
 1. Page Object class with @FindBy WebElements and methods
 2. TestNG Test class with @BeforeClass @Test @AfterClass
 3. Both positive and negative test methods
 4. Login flow in @BeforeClass setup
-5. Meaningful method names and comments
-6. Output ONLY the Java code — no intro text, no test case list, no summaries."""
+5. Meaningful method names and comments"""
 
 
 def get_screenshot_tc_prompt() -> str:
@@ -469,6 +526,7 @@ Concise and suitable for QA Manager review."""
 # ===============================
 def parse_test_cases_to_list(raw_text: str) -> list:
     test_cases = []
+
     if "---CSV START---" in raw_text and "---CSV END---" in raw_text:
         csv_section = (
             raw_text.split("---CSV START---")[1]
@@ -607,17 +665,21 @@ def extract_display_text(reply: str) -> str:
 
 
 # ===============================
-# 🗂️ RENDERED BLOCKS
+# 🗂️ RENDERED BLOCKS HELPERS
 # ===============================
 def push_block(block: dict):
+    """Append a block to the persistent rendered-blocks list."""
     st.session_state.rendered_blocks.append(block)
 
 
 def render_block(block: dict, idx: int):
+    """Render a single block. idx makes widget keys unique across reruns."""
     btype = block["type"]
+
     if btype == "chat":
         with st.chat_message(block["role"]):
             st.markdown(block["content"])
+
     elif btype == "tc_result":
         with st.chat_message("assistant"):
             st.markdown(block["display_text"])
@@ -641,6 +703,7 @@ def render_block(block: dict, idx: int):
                 key=f"dl_csv_{idx}",
             )
             render_dashboard(block["dashboard"], block["feature"])
+
     elif btype == "selenium_result":
         with st.chat_message("assistant"):
             st.markdown(block["content"])
@@ -651,6 +714,7 @@ def render_block(block: dict, idx: int):
                 mime="text/plain",
                 key=f"dl_java_{idx}",
             )
+
     elif btype == "bdd_result":
         with st.chat_message("assistant"):
             st.code(block["content"], language="gherkin")
@@ -661,6 +725,7 @@ def render_block(block: dict, idx: int):
                 mime="text/plain",
                 key=f"dl_bdd_{idx}",
             )
+
     elif btype == "report_result":
         with st.chat_message("assistant"):
             st.markdown(block["content"])
@@ -671,13 +736,16 @@ def render_block(block: dict, idx: int):
                 mime="text/plain",
                 key=f"dl_report_{idx}",
             )
+
     elif btype == "warning":
         st.warning(block["content"])
+
     elif btype == "error":
         st.error(block["content"])
 
 
 def render_all_blocks():
+    """Replay all persistent blocks on every rerun."""
     for idx, block in enumerate(st.session_state.rendered_blocks):
         render_block(block, idx)
 
@@ -792,7 +860,7 @@ if st.sidebar.button("🗑️ Clear All", use_container_width=True):
 
 
 # ===============================
-# 🖥️ MAIN AREA
+# 🖥️ MAIN AREA — inputs
 # ===============================
 col1, col2 = st.columns([2, 1])
 
@@ -823,6 +891,8 @@ with col2:
 
 st.divider()
 st.markdown("### 💬 Results")
+
+# ---- Replay all persistent blocks on every rerun ----
 render_all_blocks()
 
 
@@ -833,29 +903,40 @@ def handle_generate_tc(ac_text: str, feature: str):
     if not ac_text.strip():
         st.warning("⚠️ Please paste ticket details first!")
         return
+
     prompt = get_testcase_prompt(ac_text, feature)
     user_msg = f"**📋 Generate Test Cases for:** {feature}\n\n**Details:**\n{ac_text[:300]}..."
+
     push_block({"type": "chat", "role": "user", "content": user_msg})
     st.session_state.chat_history.append({"role": "user", "content": user_msg})
+
     messages = [
-        {"role": "system", "content": (
-            "You are a QA expert. Show test case titles as numbered list. "
-            "ALWAYS generate full CSV after titles. "
-            "CSV starts with ---CSV START--- and ends with ---CSV END---. "
-            "NEVER skip the CSV section. "
-            "4 columns: Test Case Title, Steps to Reproduce, Expected Result, Actual Result. "
-            "7 login steps first, then 2-3 nav steps, then final verification. "
-            "Expected Result = User should be able to... Actual Result = User is able to..."
-        )},
+        {
+            "role": "system",
+            "content": (
+                "You are a QA expert. "
+                "Show test case titles as numbered list. "
+                "ALWAYS generate full CSV after titles. "
+                "CSV starts with ---CSV START--- and ends with ---CSV END---. "
+                "NEVER skip the CSV section. "
+                "4 columns: Test Case Title, Steps to Reproduce, Expected Result, Actual Result. "
+                "7 login steps first, then 2-3 nav steps, then final verification. "
+                "Expected Result = User should be able to... "
+                "Actual Result = User is able to..."
+            ),
+        },
         {"role": "user", "content": prompt},
     ]
+
     with st.spinner("🔍 Generating test cases..."):
         reply = call_groq(messages)
+
     display_text = extract_display_text(reply)
     parsed = parse_test_cases_to_list(reply)
     st.session_state.last_reply = reply
     st.session_state.last_feature = feature
     st.session_state.last_ac = ac_text
+
     if parsed:
         st.session_state.last_test_cases = parsed
         csv_bytes = generate_csv(parsed)
@@ -865,9 +946,11 @@ def handle_generate_tc(ac_text: str, feature: str):
         fname = feature.replace(" ", "_")
         csv_filename = f"{fname}_test_cases.csv"
         dash = compute_dashboard(parsed, ac_text)
+
         st.session_state.dl_csv_data = csv_bytes
         st.session_state.dl_csv_filename = csv_filename
         st.session_state.dl_csv_label = f"📊 Download CSV ({len(unique_titles)} TCs)"
+
         push_block({
             "type": "tc_result",
             "display_text": display_text,
@@ -879,7 +962,11 @@ def handle_generate_tc(ac_text: str, feature: str):
         })
     else:
         push_block({"type": "chat", "role": "assistant", "content": display_text})
-        push_block({"type": "warning", "content": "⚠️ Could not parse structured test cases. Raw output shown above."})
+        push_block({
+            "type": "warning",
+            "content": "⚠️ Could not parse structured test cases. Raw output shown above.",
+        })
+
     st.session_state.chat_history.append({"role": "assistant", "content": display_text})
     st.rerun()
 
@@ -888,31 +975,38 @@ def handle_generate_selenium(ac_text: str, feature: str):
     if not ac_text.strip():
         st.warning("⚠️ Please paste ticket details first!")
         return
+
     tc_context = "\n".join([
         tc["Test Case Title"]
         for tc in st.session_state.last_test_cases[:10]
     ]) if st.session_state.last_test_cases else ""
+
     prompt = get_selenium_prompt(ac_text, tc_context)
     user_msg = f"**🤖 Generate Selenium Java Code for:** {feature}"
+
     push_block({"type": "chat", "role": "user", "content": user_msg})
     st.session_state.chat_history.append({"role": "user", "content": user_msg})
+
     messages = [
-        {"role": "system", "content": (
-            "You are a Senior Selenium Automation Engineer. "
-            "Generate clean production-ready Java code using TestNG and Page Object Model. "
-            "STRICT RULE: Output ONLY Java code. "
-            "Do NOT list test cases, do NOT repeat acceptance criteria, "
-            "do NOT add any intro paragraph or summary before the code. "
-            "Start your response directly with the Java class definition."
-        )},
+        {
+            "role": "system",
+            "content": (
+                "You are a Senior Selenium Automation Engineer. "
+                "Generate clean production-ready Java code using TestNG and Page Object Model."
+            ),
+        },
         {"role": "user", "content": prompt},
     ]
+
     with st.spinner("⚙️ Generating Selenium Java..."):
         reply = call_groq(messages)
+
     java_bytes = reply.encode("utf-8")
     java_filename = f"{feature.replace(' ', '_')}_selenium.java"
+
     st.session_state.dl_selenium_data = java_bytes
     st.session_state.dl_selenium_filename = java_filename
+
     push_block({
         "type": "selenium_result",
         "content": reply,
@@ -927,94 +1021,78 @@ def handle_analyze_screenshot(ac_text: str, feature: str):
     if not st.session_state.images:
         st.warning("⚠️ Upload a screenshot from sidebar first!")
         return
+
     user_msg = "**🖼️ Analyze Screenshot — Generate Test Cases**"
     push_block({"type": "chat", "role": "user", "content": user_msg})
     st.session_state.chat_history.append({"role": "user", "content": user_msg})
 
-    with st.spinner("🔍 Step 1/3: Extracting all text from screenshot..."):
-        ocr_messages = [
-            {"role": "system", "content": (
-                "You are an expert OCR and content extraction engine. "
-                "Your job is to extract EVERY piece of text visible in the screenshot "
-                "exactly as it appears. This includes: page titles, headings, labels, "
-                "button text, field names, error messages, descriptions, acceptance criteria, "
-                "user stories, table content, dropdown options, placeholder text, "
-                "tooltips, breadcrumbs, menu items, and any other visible text. "
-                "Output ALL extracted text in a structured readable format. "
-                "Do NOT summarize or skip anything. Extract everything word for word."
-            )},
-            {"role": "user", "content": (
-                "Please extract ALL text visible in this screenshot exactly as it appears. "
-                "Include every heading, label, button, field, description, acceptance criteria, "
-                "user story, requirement, and any other text you can see. "
-                "Do not summarize — give me the full raw text."
-            )},
+    with st.spinner("🔍 Step 1/2: Analyzing screenshot..."):
+        vision_messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are an expert UI analyst. "
+                    "Describe every UI element you see in the screenshot in detail."
+                ),
+            },
+            {
+                "role": "user",
+                "content": "Analyze this UI screenshot carefully and list ALL UI elements you can see.",
+            },
         ]
-        extracted_text = call_groq(ocr_messages, images=st.session_state.images)
+        ui_description = call_groq(vision_messages, images=st.session_state.images)
 
-    if extracted_text.startswith("❌"):
-        push_block({"type": "error", "content": extracted_text})
+    if ui_description.startswith("❌"):
+        push_block({"type": "error", "content": ui_description})
         st.rerun()
         return
 
-    with st.spinner("📝 Step 2/3: Structuring extracted content as AC..."):
-        structure_messages = [
-            {"role": "system", "content": (
-                "You are a Business Analyst. "
-                "Given raw extracted text from a screenshot, "
-                "identify and structure it as proper Acceptance Criteria. "
-                "Extract: User Story, Requirements, Acceptance Criteria points. "
-                "If the text already contains AC points, preserve them exactly. "
-                "Format output as clean AC that can be used for test case generation."
-            )},
-            {"role": "user", "content": (
-                f"Here is the raw text extracted from the screenshot:\n\n"
-                f"{extracted_text}\n\n"
-                f"Please structure this as proper Acceptance Criteria for test case generation. "
-                f"Preserve all original requirements and AC points exactly."
-            )},
-        ]
-        structured_ac = call_groq(structure_messages)
-
-    if structured_ac.startswith("❌"):
-        push_block({"type": "error", "content": structured_ac})
-        st.rerun()
-        return
-
-    if ac_text.strip():
-        final_ac = f"{ac_text}\n\n--- Also extracted from screenshot ---\n{structured_ac}"
-    else:
-        final_ac = structured_ac
-
-    with st.spinner("📋 Step 3/3: Generating test cases from extracted content..."):
-        tc_prompt = get_testcase_prompt(final_ac, feature)
+    with st.spinner("📋 Step 2/2: Generating test cases..."):
+        tc_prompt = get_testcase_prompt(ui_description, feature)
         tc_messages = [
-            {"role": "system", "content": (
-                "You are a QA expert. Show test case titles as numbered list. "
-                "ALWAYS generate full CSV after titles. "
-                "CSV starts with ---CSV START--- and ends with ---CSV END---. "
-                "NEVER skip the CSV section. "
-                "4 columns: Test Case Title, Steps to Reproduce, Expected Result, Actual Result. "
-                "Expected Result = User should be able to... "
-                "Actual Result = User is able to... "
-                "NEVER repeat login steps after step 7."
-            )},
+            {
+                "role": "system",
+                "content": (
+                    "You are a QA expert. "
+                    "Show test case titles as numbered list. "
+                    "ALWAYS generate full CSV after titles. "
+                    "CSV starts with ---CSV START--- and ends with ---CSV END---. "
+                    "NEVER skip the CSV section. "
+                    "4 columns: Test Case Title, Steps to Reproduce, Expected Result, Actual Result. "
+                    "Expected Result = User should be able to... "
+                    "Actual Result = User is able to... "
+                    "NEVER repeat login steps after step 7."
+                ),
+            },
             {"role": "user", "content": tc_prompt},
         ]
         try:
-            headers = {"Authorization": f"Bearer {GROQ_KEY}", "Content-Type": "application/json"}
-            payload = {"model": "llama-3.3-70b-versatile", "messages": tc_messages, "max_tokens": 7000, "temperature": 0.3}
-            resp = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, timeout=120)
+            headers = {
+                "Authorization": f"Bearer {GROQ_KEY}",
+                "Content-Type": "application/json",
+            }
+            payload = {
+                "model": "llama-3.3-70b-versatile",
+                "messages": tc_messages,
+                "max_tokens": 7000,
+                "temperature": 0.3,
+            }
+            resp = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers=headers, json=payload, timeout=120,
+            )
             resp.raise_for_status()
             reply = resp.json()["choices"][0]["message"]["content"]
         except Exception as e:
             reply = f"❌ Error: {str(e)}"
 
+    screenshot_ac = ac_text if ac_text.strip() else ui_description
     display_text = extract_display_text(reply)
     parsed = parse_test_cases_to_list(reply)
     st.session_state.last_reply = reply
     st.session_state.last_feature = f"{feature} (Screenshot)"
-    st.session_state.last_ac = final_ac
+    st.session_state.last_ac = screenshot_ac
+
     if parsed:
         st.session_state.last_test_cases = parsed
         csv_bytes = generate_csv(parsed)
@@ -1023,10 +1101,12 @@ def handle_analyze_screenshot(ac_text: str, feature: str):
         ))
         fname = f"{feature.replace(' ', '_')}_screenshot"
         csv_filename = f"{fname}_test_cases.csv"
-        dash = compute_dashboard(parsed, final_ac)
+        dash = compute_dashboard(parsed, screenshot_ac)
+
         st.session_state.dl_csv_data = csv_bytes
         st.session_state.dl_csv_filename = csv_filename
         st.session_state.dl_csv_label = f"📊 Download CSV ({len(unique_titles)} TCs)"
+
         push_block({
             "type": "tc_result",
             "display_text": display_text,
@@ -1038,7 +1118,11 @@ def handle_analyze_screenshot(ac_text: str, feature: str):
         })
     else:
         push_block({"type": "chat", "role": "assistant", "content": display_text})
-        push_block({"type": "warning", "content": "⚠️ Could not parse structured test cases. Raw output shown above."})
+        push_block({
+            "type": "warning",
+            "content": "⚠️ Could not parse structured test cases. Raw output shown above.",
+        })
+
     st.session_state.chat_history.append({"role": "assistant", "content": display_text})
     st.rerun()
 
@@ -1047,20 +1131,30 @@ def handle_generate_bdd(ac_text: str, feature: str):
     if not ac_text.strip():
         st.warning("⚠️ Please paste ticket details first!")
         return
+
     prompt = get_bdd_prompt(ac_text)
     user_msg = f"**📝 BDD Scenarios for:** {feature}"
+
     push_block({"type": "chat", "role": "user", "content": user_msg})
     st.session_state.chat_history.append({"role": "user", "content": user_msg})
+
     messages = [
-        {"role": "system", "content": "You are a BDD expert. Generate clear Gherkin scenarios."},
+        {
+            "role": "system",
+            "content": "You are a BDD expert. Generate clear Gherkin scenarios.",
+        },
         {"role": "user", "content": prompt},
     ]
+
     with st.spinner("📝 Generating BDD..."):
         reply = call_groq(messages)
+
     feature_bytes = reply.encode("utf-8")
     feature_filename = f"{feature.replace(' ', '_')}.feature"
+
     st.session_state.dl_bdd_data = feature_bytes
     st.session_state.dl_bdd_filename = feature_filename
+
     push_block({
         "type": "bdd_result",
         "content": reply,
@@ -1075,20 +1169,33 @@ def handle_summary_report(ac_text: str, feature: str):
     if not st.session_state.last_test_cases:
         st.warning("⚠️ Generate test cases first!")
         return
+
     prompt = get_summary_prompt(st.session_state.last_test_cases, feature)
     user_msg = f"**📄 Test Summary Report for:** {feature}"
+
     push_block({"type": "chat", "role": "user", "content": user_msg})
     st.session_state.chat_history.append({"role": "user", "content": user_msg})
+
     messages = [
-        {"role": "system", "content": "You are a QA Test Lead writing professional reports for QA Managers. Be concise and professional."},
+        {
+            "role": "system",
+            "content": (
+                "You are a QA Test Lead writing professional reports for QA Managers. "
+                "Be concise and professional."
+            ),
+        },
         {"role": "user", "content": prompt},
     ]
+
     with st.spinner("📄 Generating report..."):
         reply = call_groq(messages)
+
     report_bytes = reply.encode("utf-8")
     report_filename = f"{feature.replace(' ', '_')}_report.txt"
+
     st.session_state.dl_report_data = report_bytes
     st.session_state.dl_report_filename = report_filename
+
     push_block({
         "type": "report_result",
         "content": reply,
@@ -1135,6 +1242,7 @@ user_prompt = st.chat_input("Ask anything about QA, testing, automation...")
 if user_prompt:
     push_block({"type": "chat", "role": "user", "content": user_prompt})
     st.session_state.chat_history.append({"role": "user", "content": user_prompt})
+
     system_msg = (
         "You are an expert QA Engineer and Technical Test Lead. "
         "Help with test cases, Selenium Java, bug reports, and QA best practices. "
@@ -1145,15 +1253,19 @@ if user_prompt:
         system_msg += f"\n\nDoc context:\n{st.session_state.file_text[:4000]}"
     if st.session_state.last_ac:
         system_msg += f"\n\nPrevious AC:\n{st.session_state.last_ac}"
+
     api_messages = [{"role": "system", "content": system_msg}]
     for msg in st.session_state.chat_history[-10:]:
         api_messages.append(msg)
+
     use_image = st.session_state.images and any(
         w in user_prompt.lower()
         for w in ["image", "screenshot", "screen", "this", "describe", "analyze"]
     )
+
     with st.spinner("Thinking..."):
         reply = call_groq(api_messages, images=(st.session_state.images if use_image else None))
+
     push_block({"type": "chat", "role": "assistant", "content": reply})
     st.session_state.chat_history.append({"role": "assistant", "content": reply})
     st.rerun()

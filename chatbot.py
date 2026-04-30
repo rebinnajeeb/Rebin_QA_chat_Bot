@@ -42,23 +42,10 @@ st.markdown("""
     }
     .metric-num { font-size: 32px; font-weight: 700; }
     .metric-lbl { font-size: 13px; color: #444 !important; margin-top: 4px; }
-    .badge-high { background:#ffe0e0; color:#c00;
-        padding:2px 8px; border-radius:99px; font-size:11px; }
-    .badge-med { background:#fff3cd; color:#856404;
-        padding:2px 8px; border-radius:99px; font-size:11px; }
-    .badge-low { background:#d4edda; color:#155724;
-        padding:2px 8px; border-radius:99px; font-size:11px; }
-    .badge-pos { background:#d1f5ea; color:#0f6e56;
-        padding:2px 8px; border-radius:99px; font-size:11px; }
-    .badge-neg { background:#fde8e8; color:#a32d2d;
-        padding:2px 8px; border-radius:99px; font-size:11px; }
-    .ai-suggestion {
-        background: #e8f4fd; border-left: 4px solid #185FA5;
-        padding: 10px 14px; border-radius: 0 8px 8px 0;
-        font-size: 14px; margin: 8px 0;
-        color: #0a2540 !important;
-        font-weight: 500 !important;
-    }
+    .badge-high { background:#ffe0e0; color:#c00; padding:2px 8px; border-radius:99px; font-size:11px; }
+    .badge-med { background:#fff3cd; color:#856404; padding:2px 8px; border-radius:99px; font-size:11px; }
+    .badge-pos { background:#d1f5ea; color:#0f6e56; padding:2px 8px; border-radius:99px; font-size:11px; }
+    .badge-neg { background:#fde8e8; color:#a32d2d; padding:2px 8px; border-radius:99px; font-size:11px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -82,6 +69,7 @@ defaults = {
     "last_feature": "",
     "last_file_prefix": "",
     "last_action": "",
+    "selected_model": "claude-haiku-4-5",
     "dl_csv_data": None,
     "dl_csv_filename": "",
     "dl_csv_label": "",
@@ -110,10 +98,6 @@ def image_to_base64(image: Image.Image) -> str:
 
 
 def sanitize_messages(messages: list) -> list:
-    """
-    Claude API requires strictly alternating user/assistant messages.
-    This function ensures no two consecutive same-role messages.
-    """
     if not messages:
         return []
     sanitized = [messages[0]]
@@ -121,7 +105,6 @@ def sanitize_messages(messages: list) -> list:
         if msg["role"] != sanitized[-1]["role"]:
             sanitized.append(msg)
         else:
-            # Merge consecutive same-role messages
             sanitized[-1] = {
                 "role": msg["role"],
                 "content": sanitized[-1]["content"] + "\n" + msg["content"]
@@ -154,10 +137,8 @@ def call_claude(messages: list, system: str = "", images: list = None) -> str:
         else:
             api_messages = [{"role": m["role"], "content": m["content"]} for m in messages]
 
-        # Sanitize to ensure alternating roles
         api_messages = sanitize_messages(api_messages)
 
-        # Must start with user
         if api_messages and api_messages[0]["role"] != "user":
             api_messages = api_messages[1:]
 
@@ -165,7 +146,7 @@ def call_claude(messages: list, system: str = "", images: list = None) -> str:
             return "❌ No valid messages to send."
 
         response = client.messages.create(
-            model="claude-sonnet-4-5",
+            model=st.session_state.get("selected_model", "claude-haiku-4-5"),
             max_tokens=16000,
             system=system if system else "You are a helpful assistant.",
             messages=api_messages,
@@ -176,16 +157,10 @@ def call_claude(messages: list, system: str = "", images: list = None) -> str:
         return f"❌ Error: {str(e)}"
 
 
-# ===============================
-# 🔑 NEGATIVE TITLE CHECK
-# ===============================
 def is_negative_title(title: str) -> bool:
     return "not able" in title.lower()
 
 
-# ===============================
-# 📦 ZIP HELPER
-# ===============================
 def create_zip(files: dict) -> bytes:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -670,6 +645,28 @@ def render_all_blocks():
 # ===============================
 st.sidebar.markdown("## 🧪 QA Assistant")
 st.sidebar.markdown("---")
+
+# 🤖 MODEL SELECTOR
+st.sidebar.markdown("### 🤖 Choose AI Model")
+selected_model = st.sidebar.selectbox(
+    "Select Model",
+    options=[
+        "claude-haiku-4-5",
+        "claude-sonnet-4-5",
+        "claude-opus-4-5",
+    ],
+    format_func=lambda x: {
+        "claude-haiku-4-5": "⚡ Haiku 4.5 (Fast)",
+        "claude-sonnet-4-5": "⚖️ Sonnet 4.5 (Balanced)",
+        "claude-opus-4-5": "🧠 Opus 4.5 (Smartest)",
+    }[x],
+    index=0,
+    label_visibility="collapsed",
+)
+st.session_state.selected_model = selected_model
+st.sidebar.caption(f"Currently using: **{selected_model}**")
+st.sidebar.markdown("---")
+
 st.sidebar.markdown("### 📂 Upload Files")
 
 uploaded_files = st.sidebar.file_uploader(
@@ -822,7 +819,7 @@ def handle_generate_tc(ac_text: str, feature: str):
     push_block({"type": "chat", "role": "user", "content": user_msg})
     st.session_state.chat_history.append({"role": "user", "content": user_msg})
 
-    with st.spinner("🔍 Generating test cases..."):
+    with st.spinner(f"🔍 Generating test cases using {st.session_state.selected_model}..."):
         reply = call_claude(
             messages=[{"role": "user", "content": prompt}],
             system=(
@@ -885,7 +882,7 @@ def handle_generate_selenium(ac_text: str, feature: str):
     push_block({"type": "chat", "role": "user", "content": user_msg})
     st.session_state.chat_history.append({"role": "user", "content": user_msg})
 
-    with st.spinner("⚙️ Generating Selenium TestNG files..."):
+    with st.spinner(f"⚙️ Generating Selenium TestNG files using {st.session_state.selected_model}..."):
         reply = call_claude(
             messages=[{"role": "user", "content": prompt}],
             system=(
@@ -941,7 +938,7 @@ def handle_analyze_screenshot(ac_text: str, feature: str):
     push_block({"type": "chat", "role": "user", "content": user_msg})
     st.session_state.chat_history.append({"role": "user", "content": user_msg})
 
-    with st.spinner("🔍 Step 1/2: Analyzing screenshot..."):
+    with st.spinner(f"🔍 Step 1/2: Analyzing screenshot using {st.session_state.selected_model}..."):
         ui_description = call_claude(
             messages=[{"role": "user", "content": "Analyze this UI screenshot carefully and describe every UI element, button, field, text, and section you can see in detail."}],
             system="You are an expert UI analyst. Describe every UI element you see in the screenshot in complete detail.",
@@ -1014,7 +1011,7 @@ def handle_generate_bdd(ac_text: str, feature: str):
     push_block({"type": "chat", "role": "user", "content": user_msg})
     st.session_state.chat_history.append({"role": "user", "content": user_msg})
 
-    with st.spinner("📝 Generating BDD Cucumber files..."):
+    with st.spinner(f"📝 Generating BDD Cucumber files using {st.session_state.selected_model}..."):
         reply = call_claude(
             messages=[{"role": "user", "content": prompt}],
             system=(
@@ -1072,7 +1069,7 @@ def handle_summary_report(ac_text: str, feature: str):
     push_block({"type": "chat", "role": "user", "content": user_msg})
     st.session_state.chat_history.append({"role": "user", "content": user_msg})
 
-    with st.spinner("📄 Generating report..."):
+    with st.spinner(f"📄 Generating report using {st.session_state.selected_model}..."):
         reply = call_claude(
             messages=[{"role": "user", "content": prompt}],
             system="You are a QA Test Lead writing professional reports for QA Managers. Be concise and professional.",
@@ -1140,14 +1137,12 @@ if user_prompt:
     if st.session_state.last_ac:
         system_msg += f"\n\nPrevious AC:\n{st.session_state.last_ac}"
 
-    # Build clean alternating messages for Claude
     raw_history = st.session_state.chat_history[-10:]
     api_messages = sanitize_messages([
         {"role": m["role"], "content": m["content"]}
         for m in raw_history
     ])
 
-    # Ensure last message is user
     if not api_messages or api_messages[-1]["role"] != "user":
         api_messages.append({"role": "user", "content": user_prompt})
 
@@ -1156,7 +1151,7 @@ if user_prompt:
         for w in ["image", "screenshot", "screen", "this", "describe", "analyze"]
     )
 
-    with st.spinner("Thinking..."):
+    with st.spinner(f"Thinking using {st.session_state.selected_model}..."):
         reply = call_claude(
             messages=api_messages,
             system=system_msg,

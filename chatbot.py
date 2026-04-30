@@ -2,7 +2,7 @@ from dotenv import load_dotenv
 import streamlit as st
 import PyPDF2
 from PIL import Image
-import requests
+import anthropic
 import base64
 import os
 import io
@@ -11,11 +11,13 @@ import zipfile
 
 # ---------- LOAD ENV ----------
 load_dotenv()
-GROQ_KEY = os.getenv("GROQ_API_KEY")
+CLAUDE_KEY = os.getenv("CLAUDE_API_KEY")
 
-if not GROQ_KEY:
-    st.error("❌ GROQ_API_KEY missing. Check .env file")
+if not CLAUDE_KEY:
+    st.error("❌ CLAUDE_API_KEY missing. Check .env file")
     st.stop()
+
+client = anthropic.Anthropic(api_key=CLAUDE_KEY)
 
 # ---------- PAGE CONFIG ----------
 st.set_page_config(
@@ -107,53 +109,75 @@ def image_to_base64(image: Image.Image) -> str:
     return base64.b64encode(buf.getvalue()).decode("utf-8")
 
 
-def call_groq(messages: list, images: list = None) -> str:
-    headers = {
-        "Authorization": f"Bearer {GROQ_KEY}",
-        "Content-Type": "application/json",
-    }
-    if images:
-        model = "meta-llama/llama-4-scout-17b-16e-instruct"
-        api_messages = []
-        for i, msg in enumerate(messages):
-            if i == len(messages) - 1 and msg["role"] == "user":
-                content = [{"type": "text", "text": msg["content"]}]
-                for img in images:
-                    b64 = image_to_base64(img)
-                    content.append({
-                        "type": "image_url",
-                        "image_url": {"url": f"data:image/jpeg;base64,{b64}"}
-                    })
-                api_messages.append({"role": "user", "content": content})
-            else:
-                api_messages.append(msg)
-    else:
-        model = "llama-3.3-70b-versatile"
-        api_messages = messages
+def sanitize_messages(messages: list) -> list:
+    """
+    Claude API requires strictly alternating user/assistant messages.
+    This function ensures no two consecutive same-role messages.
+    """
+    if not messages:
+        return []
+    sanitized = [messages[0]]
+    for msg in messages[1:]:
+        if msg["role"] != sanitized[-1]["role"]:
+            sanitized.append(msg)
+        else:
+            # Merge consecutive same-role messages
+            sanitized[-1] = {
+                "role": msg["role"],
+                "content": sanitized[-1]["content"] + "\n" + msg["content"]
+            }
+    return sanitized
 
-    payload = {
-        "model": model,
-        "messages": api_messages,
-        "max_tokens": 7000,
-        "temperature": 0.3,
-    }
+
+def call_claude(messages: list, system: str = "", images: list = None) -> str:
     try:
-        response = requests.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers=headers, json=payload, timeout=60,
+        api_messages = []
+
+        if images:
+            for i, msg in enumerate(messages):
+                if i == len(messages) - 1 and msg["role"] == "user":
+                    content = []
+                    for img in images:
+                        b64 = image_to_base64(img)
+                        content.append({
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "image/jpeg",
+                                "data": b64,
+                            },
+                        })
+                    content.append({"type": "text", "text": msg["content"]})
+                    api_messages.append({"role": "user", "content": content})
+                else:
+                    api_messages.append({"role": msg["role"], "content": msg["content"]})
+        else:
+            api_messages = [{"role": m["role"], "content": m["content"]} for m in messages]
+
+        # Sanitize to ensure alternating roles
+        api_messages = sanitize_messages(api_messages)
+
+        # Must start with user
+        if api_messages and api_messages[0]["role"] != "user":
+            api_messages = api_messages[1:]
+
+        if not api_messages:
+            return "❌ No valid messages to send."
+
+        response = client.messages.create(
+            model="claude-sonnet-4-5",
+            max_tokens=16000,
+            system=system if system else "You are a helpful assistant.",
+            messages=api_messages,
         )
-        response.raise_for_status()
-        return response.json()["choices"][0]["message"]["content"]
-    except requests.exceptions.Timeout:
-        return "❌ Request timed out. Please try again."
-    except requests.exceptions.HTTPError:
-        return f"❌ API error {response.status_code}: {response.text}"
+        return response.content[0].text
+
     except Exception as e:
-        return f"❌ Unexpected error: {str(e)}"
+        return f"❌ Error: {str(e)}"
 
 
 # ===============================
-# 🔑 SINGLE SOURCE OF TRUTH: is_negative_title
+# 🔑 NEGATIVE TITLE CHECK
 # ===============================
 def is_negative_title(title: str) -> bool:
     return "not able" in title.lower()
@@ -171,7 +195,6 @@ def create_zip(files: dict) -> bytes:
 
 
 def parse_multi_file_response(reply: str) -> dict:
-    """Parse ===FILE: filename=== separated response into {filename: content}"""
     files = {}
     parts = reply.split("===FILE:")
     for part in parts[1:]:
@@ -184,27 +207,23 @@ def parse_multi_file_response(reply: str) -> dict:
 
 
 # ===============================
-# 📊 DASHBOARD FUNCTIONS
+# 📊 DASHBOARD
 # ===============================
 def compute_dashboard(test_cases: list, ac_text: str) -> dict:
     unique_titles = list(dict.fromkeys(
         tc["Test Case Title"] for tc in test_cases
         if tc.get("Test Case Title")
     ))
-
     negative = sum(1 for t in unique_titles if is_negative_title(t))
     positive = len(unique_titles) - negative
-
     high = sum(
         1 for t in unique_titles
         if any(word in t.lower() for word in [
-            "login", "security", "payment",
-            "critical", "error", "not able",
-            "invalid", "fail", "unable"
+            "login", "security", "payment", "critical",
+            "error", "not able", "invalid", "fail", "unable"
         ])
     )
     med = max(0, len(unique_titles) - high)
-
     ac_lines = [
         l.strip() for l in ac_text.split("\n")
         if l.strip() and len(l.strip()) > 10
@@ -221,7 +240,6 @@ def compute_dashboard(test_cases: list, ac_text: str) -> dict:
                 covered += 1
                 break
     coverage_pct = int((covered / max(len(ac_lines), 1)) * 100)
-
     return {
         "total": len(unique_titles),
         "positive": positive,
@@ -237,40 +255,17 @@ def compute_dashboard(test_cases: list, ac_text: str) -> dict:
 def render_dashboard(data: dict, feature: str):
     st.markdown("---")
     st.markdown(f"### 📊 Live Dashboard — *{feature}*")
-
     c1, c2, c3, c4 = st.columns(4)
     with c1:
-        st.markdown(f"""
-        <div class="metric-card">
-            <div class="metric-num" style="color:#185FA5">{data['unique_tcs']}</div>
-            <div class="metric-lbl">Total Test Cases</div>
-        </div>""", unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-card"><div class="metric-num" style="color:#185FA5">{data["unique_tcs"]}</div><div class="metric-lbl">Total Test Cases</div></div>', unsafe_allow_html=True)
     with c2:
-        st.markdown(f"""
-        <div class="metric-card">
-            <div class="metric-num" style="color:#3B6D11">{data['positive']}</div>
-            <div class="metric-lbl">Positive Test Cases</div>
-        </div>""", unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-card"><div class="metric-num" style="color:#3B6D11">{data["positive"]}</div><div class="metric-lbl">Positive Test Cases</div></div>', unsafe_allow_html=True)
     with c3:
-        st.markdown(f"""
-        <div class="metric-card">
-            <div class="metric-num" style="color:#A32D2D">{data['negative']}</div>
-            <div class="metric-lbl">Negative Test Cases</div>
-        </div>""", unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-card"><div class="metric-num" style="color:#A32D2D">{data["negative"]}</div><div class="metric-lbl">Negative Test Cases</div></div>', unsafe_allow_html=True)
     with c4:
-        color = (
-            "#3B6D11" if data["coverage_pct"] >= 80
-            else "#854F0B" if data["coverage_pct"] >= 50
-            else "#A32D2D"
-        )
-        st.markdown(f"""
-        <div class="metric-card">
-            <div class="metric-num" style="color:{color}">{data['coverage_pct']}%</div>
-            <div class="metric-lbl">AC Coverage</div>
-        </div>""", unsafe_allow_html=True)
-
+        color = "#3B6D11" if data["coverage_pct"] >= 80 else "#854F0B" if data["coverage_pct"] >= 50 else "#A32D2D"
+        st.markdown(f'<div class="metric-card"><div class="metric-num" style="color:{color}">{data["coverage_pct"]}%</div><div class="metric-lbl">AC Coverage</div></div>', unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
-
     st.markdown("#### 🎯 Coverage Breakdown")
     pos_pct = int((data["positive"] / max(data["total"], 1)) * 100)
     neg_pct = int((data["negative"] / max(data["total"], 1)) * 100)
@@ -280,36 +275,21 @@ def render_dashboard(data: dict, feature: str):
     st.progress(neg_pct / 100)
     st.markdown(f"**AC Coverage** — {data['coverage_pct']}%")
     st.progress(data["coverage_pct"] / 100)
-
     st.markdown("#### 🏷️ Priority Distribution")
     p1, p2 = st.columns(2)
     with p1:
-        st.markdown(
-            f'<span class="badge-high">🔴 High: {data["high"]}</span>',
-            unsafe_allow_html=True,
-        )
+        st.markdown(f'<span class="badge-high">🔴 High: {data["high"]}</span>', unsafe_allow_html=True)
     with p2:
-        st.markdown(
-            f'<span class="badge-med">🟡 Medium: {data["med"]}</span>',
-            unsafe_allow_html=True,
-        )
-
+        st.markdown(f'<span class="badge-med">🟡 Medium: {data["med"]}</span>', unsafe_allow_html=True)
     st.markdown("#### 📋 Test Cases Generated")
     for i, title in enumerate(data["unique_titles"], 1):
-        if is_negative_title(title):
-            badge = "neg"
-            label = "Negative"
-        else:
-            badge = "pos"
-            label = "Positive"
-        st.markdown(
-            f'{i}. <span class="badge-{badge}">{label}</span> {title}',
-            unsafe_allow_html=True,
-        )
+        badge = "neg" if is_negative_title(title) else "pos"
+        label = "Negative" if badge == "neg" else "Positive"
+        st.markdown(f'{i}. <span class="badge-{badge}">{label}</span> {title}', unsafe_allow_html=True)
 
 
 # ===============================
-# 📋 PROMPT TEMPLATES
+# 📋 PROMPTS
 # ===============================
 INTERMEDIATE_STEPS_INSTRUCTION = """
 IMPORTANT: After step 7 user is ALREADY LOGGED IN.
@@ -343,14 +323,19 @@ EVERY test case MUST start with these 7 login steps in CSV:
 
 {INTERMEDIATE_STEPS_INSTRUCTION}
 
-Generate 6-8 test cases (mix positive and negative).
+Generate as many test cases as needed to fully cover ALL acceptance criteria.
+Mix positive and negative naturally based on AC — do NOT force equal numbers.
 
-First show titles only in chat:
+STRICT TITLE FORMAT:
+POSITIVE = "Verify whether user is able to [action]"
+NEGATIVE = "Verify whether user is not able to [action]"
+
+First show titles only:
 ✅ Generated Test Cases:
 1. Verify whether user is able to [title]
 2. Verify whether user is not able to [title]
 
-Then IMMEDIATELY provide the full CSV — do not skip:
+Then IMMEDIATELY provide full CSV:
 ---CSV START---
 Test Case Title,Steps to Reproduce,Expected Result,Actual Result
 ---CSV END---
@@ -367,7 +352,7 @@ Column 4 - Actual Result:
 - Include all 7 login steps for every TC
 - Then 2-3 navigation steps (no login repeat!)
 - Then final verification step
-- DO NOT skip the CSV section!"""
+- Complete ALL test cases — do NOT stop in the middle!"""
 
 
 def get_selenium_prompt(ac_text: str, tc_text: str = "", feature: str = "Feature") -> str:
@@ -381,7 +366,7 @@ Acceptance Criteria:
 
 {f"Test Cases:{chr(10)}{tc_text}" if tc_text else ""}
 
-Generate ALL 4 files clearly separated using exactly this format:
+Generate ALL 4 files clearly separated:
 
 ===FILE: PageObject.java===
 (Page Object Model — all @FindBy locators and action methods)
@@ -414,13 +399,13 @@ Feature: {feature}
 Acceptance Criteria:
 {ac_text}
 
-Generate ALL 4 files clearly separated using exactly this format:
+Generate ALL 4 files clearly separated:
 
 ===FILE: {fname}.feature===
 (Gherkin feature file — Background with login steps, positive and negative Scenarios)
 
 ===FILE: StepDefinitions.java===
-(Java step definitions — EVERY Given/When/Then step must have a matching @Given/@When/@Then method)
+(Java step definitions — EVERY Given/When/Then must have matching method)
 
 ===FILE: PageObject.java===
 (Page Object Model — @FindBy locators and action methods)
@@ -438,10 +423,7 @@ Rules:
 
 
 def get_summary_prompt(test_cases: list, feature: str) -> str:
-    tc_text = "\n".join([
-        f"- {tc['Test Case Title']}"
-        for tc in test_cases[:20]
-    ])
+    tc_text = "\n".join([f"- {tc['Test Case Title']}" for tc in test_cases[:20]])
     return f"""As a QA Test Lead, write a professional test summary report for:
 
 Feature: {feature}
@@ -465,7 +447,6 @@ Concise and suitable for QA Manager review."""
 # ===============================
 def parse_test_cases_to_list(raw_text: str) -> list:
     test_cases = []
-
     if "---CSV START---" in raw_text and "---CSV END---" in raw_text:
         csv_section = (
             raw_text.split("---CSV START---")[1]
@@ -475,9 +456,7 @@ def parse_test_cases_to_list(raw_text: str) -> list:
         lines = csv_section.split("\n")
         for line in lines:
             line = line.strip()
-            if not line:
-                continue
-            if line.lower().startswith("test case title"):
+            if not line or line.lower().startswith("test case title"):
                 continue
             try:
                 reader = csv.reader([line])
@@ -533,45 +512,14 @@ def parse_test_cases_to_list(raw_text: str) -> list:
                             })
             except Exception:
                 continue
-    if test_cases:
-        return test_cases
-
-    current_title = ""
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
-        if (
-            ("verify" in line.lower() or "validate" in line.lower()
-             or "test case title:" in line.lower())
-            and "|" not in line
-            and len(line) > 15
-        ):
-            current_title = line.replace("Test Case Title:", "").strip("*#-_ :")
-        elif "|" in line and current_title:
-            parts = line.split("|", 1)
-            if len(parts) == 2:
-                step = parts[0].strip().strip("*- ")
-                expected = parts[1].strip().strip("*- ")
-                if step and expected and len(step) > 5:
-                    test_cases.append({
-                        "Test Case Title": current_title,
-                        "Steps to Reproduce": step,
-                        "Expected Result": expected,
-                        "Actual Result": "",
-                        "Status": "Not Executed",
-                    })
     return test_cases
 
 
 def generate_csv(test_cases: list) -> bytes:
     output = io.StringIO()
     fieldnames = [
-        "Test Case Title",
-        "Steps to Reproduce",
-        "Expected Result",
-        "Actual Result",
-        "Status",
+        "Test Case Title", "Steps to Reproduce",
+        "Expected Result", "Actual Result", "Status",
     ]
     writer = csv.DictWriter(output, fieldnames=fieldnames)
     writer.writeheader()
@@ -604,7 +552,7 @@ def extract_display_text(reply: str) -> str:
 
 
 # ===============================
-# 🗂️ RENDERED BLOCKS HELPERS
+# 🗂️ RENDERED BLOCKS
 # ===============================
 def push_block(block: dict):
     st.session_state.rendered_blocks.append(block)
@@ -630,10 +578,7 @@ def render_block(block: dict, idx: int):
                 "Full steps + expected in CSV below."
             )
             st.download_button(
-                label=(
-                    f"📊 Download Excel CSV "
-                    f"({len(unique_titles)} TCs, {len(block['parsed'])} rows)"
-                ),
+                label=f"📊 Download Excel CSV ({len(unique_titles)} TCs, {len(block['parsed'])} rows)",
                 data=block["csv_bytes"],
                 file_name=block["csv_filename"],
                 mime="text/csv",
@@ -861,7 +806,6 @@ with col2:
 
 st.divider()
 st.markdown("### 💬 Results")
-
 render_all_blocks()
 
 
@@ -875,30 +819,21 @@ def handle_generate_tc(ac_text: str, feature: str):
 
     prompt = get_testcase_prompt(ac_text, feature)
     user_msg = f"**📋 Generate Test Cases for:** {feature}\n\n**Details:**\n{ac_text[:300]}..."
-
     push_block({"type": "chat", "role": "user", "content": user_msg})
     st.session_state.chat_history.append({"role": "user", "content": user_msg})
 
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are a QA expert. "
-                "Show test case titles as numbered list. "
-                "ALWAYS generate full CSV after titles. "
-                "CSV starts with ---CSV START--- and ends with ---CSV END---. "
-                "NEVER skip the CSV section. "
-                "4 columns: Test Case Title, Steps to Reproduce, Expected Result, Actual Result. "
-                "7 login steps first, then 2-3 nav steps, then final verification. "
-                "Expected Result = User should be able to... "
-                "Actual Result = User is able to..."
-            ),
-        },
-        {"role": "user", "content": prompt},
-    ]
-
     with st.spinner("🔍 Generating test cases..."):
-        reply = call_groq(messages)
+        reply = call_claude(
+            messages=[{"role": "user", "content": prompt}],
+            system=(
+                "You are a QA expert. "
+                "STRICT RULE: Every Test Case Title MUST start with "
+                "'Verify whether user is able to' OR 'Verify whether user is not able to'. "
+                "Show titles as numbered list first, then ALWAYS generate full CSV. "
+                "CSV starts with ---CSV START--- and ends with ---CSV END---. "
+                "NEVER skip CSV. Complete ALL test cases without stopping."
+            ),
+        )
 
     display_text = extract_display_text(reply)
     parsed = parse_test_cases_to_list(reply)
@@ -915,11 +850,9 @@ def handle_generate_tc(ac_text: str, feature: str):
         fname = feature.replace(" ", "_")
         csv_filename = f"{fname}_test_cases.csv"
         dash = compute_dashboard(parsed, ac_text)
-
         st.session_state.dl_csv_data = csv_bytes
         st.session_state.dl_csv_filename = csv_filename
         st.session_state.dl_csv_label = f"📊 Download CSV ({len(unique_titles)} TCs)"
-
         push_block({
             "type": "tc_result",
             "display_text": display_text,
@@ -931,10 +864,7 @@ def handle_generate_tc(ac_text: str, feature: str):
         })
     else:
         push_block({"type": "chat", "role": "assistant", "content": display_text})
-        push_block({
-            "type": "warning",
-            "content": "⚠️ Could not parse structured test cases. Raw output shown above.",
-        })
+        push_block({"type": "warning", "content": "⚠️ Could not parse structured test cases. Raw output shown above."})
 
     st.session_state.chat_history.append({"role": "assistant", "content": display_text})
     st.rerun()
@@ -952,25 +882,19 @@ def handle_generate_selenium(ac_text: str, feature: str):
 
     prompt = get_selenium_prompt(ac_text, tc_context, feature)
     user_msg = f"**🤖 Generate Selenium TestNG Code for:** {feature}"
-
     push_block({"type": "chat", "role": "user", "content": user_msg})
     st.session_state.chat_history.append({"role": "user", "content": user_msg})
 
-    messages = [
-        {
-            "role": "system",
-            "content": (
+    with st.spinner("⚙️ Generating Selenium TestNG files..."):
+        reply = call_claude(
+            messages=[{"role": "user", "content": prompt}],
+            system=(
                 "You are a Senior Selenium Automation Engineer. "
                 "Generate ALL 4 files separated by ===FILE: filename=== markers. "
-                "Files needed: PageObject.java, TestNGTest.java, testng.xml, pom.xml. "
+                "Files: PageObject.java, TestNGTest.java, testng.xml, pom.xml. "
                 "Make code complete and production ready."
             ),
-        },
-        {"role": "user", "content": prompt},
-    ]
-
-    with st.spinner("⚙️ Generating Selenium TestNG files..."):
-        reply = call_groq(messages)
+        )
 
     files = parse_multi_file_response(reply)
     fname = feature.replace(" ", "_")
@@ -1018,20 +942,11 @@ def handle_analyze_screenshot(ac_text: str, feature: str):
     st.session_state.chat_history.append({"role": "user", "content": user_msg})
 
     with st.spinner("🔍 Step 1/2: Analyzing screenshot..."):
-        vision_messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You are an expert UI analyst. "
-                    "Describe every UI element you see in the screenshot in detail."
-                ),
-            },
-            {
-                "role": "user",
-                "content": "Analyze this UI screenshot carefully and list ALL UI elements you can see.",
-            },
-        ]
-        ui_description = call_groq(vision_messages, images=st.session_state.images)
+        ui_description = call_claude(
+            messages=[{"role": "user", "content": "Analyze this UI screenshot carefully and describe every UI element, button, field, text, and section you can see in detail."}],
+            system="You are an expert UI analyst. Describe every UI element you see in the screenshot in complete detail.",
+            images=st.session_state.images,
+        )
 
     if ui_description.startswith("❌"):
         push_block({"type": "error", "content": ui_description})
@@ -1040,42 +955,18 @@ def handle_analyze_screenshot(ac_text: str, feature: str):
 
     with st.spinner("📋 Step 2/2: Generating test cases..."):
         tc_prompt = get_testcase_prompt(ui_description, feature)
-        tc_messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You are a QA expert. "
-                    "Show test case titles as numbered list. "
-                    "ALWAYS generate full CSV after titles. "
-                    "CSV starts with ---CSV START--- and ends with ---CSV END---. "
-                    "NEVER skip the CSV section. "
-                    "4 columns: Test Case Title, Steps to Reproduce, Expected Result, Actual Result. "
-                    "Expected Result = User should be able to... "
-                    "Actual Result = User is able to... "
-                    "NEVER repeat login steps after step 7."
-                ),
-            },
-            {"role": "user", "content": tc_prompt},
-        ]
-        try:
-            headers = {
-                "Authorization": f"Bearer {GROQ_KEY}",
-                "Content-Type": "application/json",
-            }
-            payload = {
-                "model": "llama-3.3-70b-versatile",
-                "messages": tc_messages,
-                "max_tokens": 7000,
-                "temperature": 0.3,
-            }
-            resp = requests.post(
-                "https://api.groq.com/openai/v1/chat/completions",
-                headers=headers, json=payload, timeout=120,
-            )
-            resp.raise_for_status()
-            reply = resp.json()["choices"][0]["message"]["content"]
-        except Exception as e:
-            reply = f"❌ Error: {str(e)}"
+        reply = call_claude(
+            messages=[{"role": "user", "content": tc_prompt}],
+            system=(
+                "You are a QA expert. "
+                "STRICT RULE: Every Test Case Title MUST start with "
+                "'Verify whether user is able to' OR 'Verify whether user is not able to'. "
+                "Show titles as numbered list first, then ALWAYS generate full CSV. "
+                "CSV starts with ---CSV START--- and ends with ---CSV END---. "
+                "NEVER repeat login steps after step 7. "
+                "Complete ALL test cases without stopping."
+            ),
+        )
 
     screenshot_ac = ac_text if ac_text.strip() else ui_description
     display_text = extract_display_text(reply)
@@ -1093,11 +984,9 @@ def handle_analyze_screenshot(ac_text: str, feature: str):
         fname = f"{feature.replace(' ', '_')}_screenshot"
         csv_filename = f"{fname}_test_cases.csv"
         dash = compute_dashboard(parsed, screenshot_ac)
-
         st.session_state.dl_csv_data = csv_bytes
         st.session_state.dl_csv_filename = csv_filename
         st.session_state.dl_csv_label = f"📊 Download CSV ({len(unique_titles)} TCs)"
-
         push_block({
             "type": "tc_result",
             "display_text": display_text,
@@ -1109,10 +998,7 @@ def handle_analyze_screenshot(ac_text: str, feature: str):
         })
     else:
         push_block({"type": "chat", "role": "assistant", "content": display_text})
-        push_block({
-            "type": "warning",
-            "content": "⚠️ Could not parse structured test cases. Raw output shown above.",
-        })
+        push_block({"type": "warning", "content": "⚠️ Could not parse structured test cases. Raw output shown above."})
 
     st.session_state.chat_history.append({"role": "assistant", "content": display_text})
     st.rerun()
@@ -1125,26 +1011,20 @@ def handle_generate_bdd(ac_text: str, feature: str):
 
     prompt = get_bdd_prompt(ac_text, feature)
     user_msg = f"**📝 Generate BDD Cucumber Code for:** {feature}"
-
     push_block({"type": "chat", "role": "user", "content": user_msg})
     st.session_state.chat_history.append({"role": "user", "content": user_msg})
 
-    messages = [
-        {
-            "role": "system",
-            "content": (
+    with st.spinner("📝 Generating BDD Cucumber files..."):
+        reply = call_claude(
+            messages=[{"role": "user", "content": prompt}],
+            system=(
                 "You are a Senior BDD Automation Engineer. "
                 "Generate ALL 4 files separated by ===FILE: filename=== markers. "
-                "Files needed: .feature file, StepDefinitions.java, PageObject.java, pom.xml. "
+                "Files: .feature file, StepDefinitions.java, PageObject.java, pom.xml. "
                 "Every step in feature file MUST have matching method in StepDefinitions.java. "
                 "Make code complete and production ready."
             ),
-        },
-        {"role": "user", "content": prompt},
-    ]
-
-    with st.spinner("📝 Generating BDD Cucumber files..."):
-        reply = call_groq(messages)
+        )
 
     files = parse_multi_file_response(reply)
     fname = feature.replace(" ", "_")
@@ -1189,30 +1069,19 @@ def handle_summary_report(ac_text: str, feature: str):
 
     prompt = get_summary_prompt(st.session_state.last_test_cases, feature)
     user_msg = f"**📄 Test Summary Report for:** {feature}"
-
     push_block({"type": "chat", "role": "user", "content": user_msg})
     st.session_state.chat_history.append({"role": "user", "content": user_msg})
 
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are a QA Test Lead writing professional reports for QA Managers. "
-                "Be concise and professional."
-            ),
-        },
-        {"role": "user", "content": prompt},
-    ]
-
     with st.spinner("📄 Generating report..."):
-        reply = call_groq(messages)
+        reply = call_claude(
+            messages=[{"role": "user", "content": prompt}],
+            system="You are a QA Test Lead writing professional reports for QA Managers. Be concise and professional.",
+        )
 
     report_bytes = reply.encode("utf-8")
     report_filename = f"{feature.replace(' ', '_')}_report.txt"
-
     st.session_state.dl_report_data = report_bytes
     st.session_state.dl_report_filename = report_filename
-
     push_block({
         "type": "report_result",
         "content": reply,
@@ -1271,9 +1140,16 @@ if user_prompt:
     if st.session_state.last_ac:
         system_msg += f"\n\nPrevious AC:\n{st.session_state.last_ac}"
 
-    api_messages = [{"role": "system", "content": system_msg}]
-    for msg in st.session_state.chat_history[-10:]:
-        api_messages.append(msg)
+    # Build clean alternating messages for Claude
+    raw_history = st.session_state.chat_history[-10:]
+    api_messages = sanitize_messages([
+        {"role": m["role"], "content": m["content"]}
+        for m in raw_history
+    ])
+
+    # Ensure last message is user
+    if not api_messages or api_messages[-1]["role"] != "user":
+        api_messages.append({"role": "user", "content": user_prompt})
 
     use_image = st.session_state.images and any(
         w in user_prompt.lower()
@@ -1281,7 +1157,11 @@ if user_prompt:
     )
 
     with st.spinner("Thinking..."):
-        reply = call_groq(api_messages, images=(st.session_state.images if use_image else None))
+        reply = call_claude(
+            messages=api_messages,
+            system=system_msg,
+            images=(st.session_state.images if use_image else None),
+        )
 
     push_block({"type": "chat", "role": "assistant", "content": reply})
     st.session_state.chat_history.append({"role": "assistant", "content": reply})

@@ -699,7 +699,7 @@ if current_file_names != st.session_state.prev_file_names:
                     st.sidebar.error(f"❌ {file.name}: {e}")
             elif file.type in ["image/png", "image/jpg", "image/jpeg", "image/webp"]:
                 image = Image.open(file)
-                st.sidebar.image(image, caption=file.name, use_column_width=True)
+                st.sidebar.image(image, caption=file.name, use_container_width=True)
                 st.session_state.images.append(image)
         st.session_state.file_text = all_text.strip()
         if st.session_state.file_text:

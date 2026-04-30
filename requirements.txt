@@ -1,7 +1,5 @@
 streamlit
 python-dotenv
-langchain-community
-langchain-groq
 PyPDF2
 Pillow
-requests
+anthropic

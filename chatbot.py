@@ -91,6 +91,20 @@ for k, v in defaults.items():
 
 
 # ===============================
+# 💰 SMART TOKEN ALLOCATION
+# (Anthropic safe limit = 21,333 — no streaming required)
+# ===============================
+TOKEN_BUDGETS = {
+    "test_cases": 16000,    # CSV usually fits
+    "selenium":   21000,    # MAX safe limit (no streaming needed)
+    "bdd":        21000,    # MAX safe limit (no streaming needed)
+    "screenshot": 16000,    # Vision + test cases
+    "summary":     4000,    # Always small report
+    "free_chat":   8000,    # Conversational
+}
+
+
+# ===============================
 # 🔧 HELPERS
 # ===============================
 def image_to_base64(image: Image.Image) -> str:
@@ -116,7 +130,12 @@ def sanitize_messages(messages: list) -> list:
     return sanitized
 
 
-def call_claude(messages: list, system: str = "", images: list = None) -> str:
+def call_claude(messages: list, system: str = "", images: list = None, max_tokens: int = 16000) -> str:
+    """
+    Call Claude API with smart token allocation.
+    max_tokens is LIMIT not CHARGE — only pay for what's actually generated.
+    Max safe limit = 21,333 (above this, streaming is required).
+    """
     try:
         api_messages = []
 
@@ -151,7 +170,7 @@ def call_claude(messages: list, system: str = "", images: list = None) -> str:
 
         response = client.messages.create(
             model=st.session_state.get("selected_model", "claude-haiku-4-5"),
-            max_tokens=16000,
+            max_tokens=max_tokens,
             system=system if system else "You are a helpful assistant.",
             messages=api_messages,
         )
@@ -193,7 +212,6 @@ def build_full_tc_context(test_cases: list) -> str:
     if not test_cases:
         return ""
 
-    # Group steps by test case title
     grouped = {}
     for tc in test_cases:
         title = tc.get("Test Case Title", "").strip()
@@ -207,7 +225,6 @@ def build_full_tc_context(test_cases: list) -> str:
             "actual": tc.get("Actual Result", ""),
         })
 
-    # Build readable context
     context = ""
     for idx, (title, steps) in enumerate(grouped.items(), 1):
         context += f"\n═══════════════════════════════════════\n"
@@ -464,96 +481,111 @@ EVERY test case MUST start with these 7 login steps in CSV:
 {WEBSITE_KNOWLEDGE}
 
 ═══════════════════════════════════════════════════════
-🚨 CRITICAL TEST CASE GENERATION RULES — MUST FOLLOW
+🚨 STRICT 1:1 AC MAPPING — TEST CASE GENERATION
 ═══════════════════════════════════════════════════════
 
-1. ONLY generate test cases that DIRECTLY verify the AC + Requirements above.
-   - Do NOT add test cases for features NOT mentioned in the AC.
-   - Do NOT hallucinate features (e.g., loading messages, modals, CTAs from
-     other pages) unless explicitly mentioned in the AC.
+🔥 GOLDEN RULE: ONE AC POINT = ONE TEST CASE (MAX)
+   - Count the AC bullet points
+   - Generate AT MOST that many test cases
+   - PREFER FEWER if multiple AC points test the same thing
+   - NEVER generate MORE than AC points count
 
-2. Number of test cases SCALES with AC size — there is NO fixed limit:
-   - Small AC (5 points) → ~5-8 test cases
-   - Medium AC (10 points) → ~10-15 test cases
-   - Big AC (20 points) → ~20-30 test cases
-   - Cover EVERY AC point with one or more test cases.
+🚫 ZERO TOLERANCE FOR EXTRAS:
+   ❌ NO "logically needed" basic test cases
+   ❌ NO "nice to have" page load verification
+   ❌ NO "just in case" UI element checks
+   ❌ NO duplicate scenarios with slight variations
+   ❌ NO test cases for things NOT in AC
+   ❌ NO test cases for functionality from WEBSITE_KNOWLEDGE
+      that isn't mentioned in AC
 
-3. Use WEBSITE_KNOWLEDGE ONLY for navigation steps.
-   - Use it to know HOW to reach the page mentioned in AC.
-   - Do NOT use it to add extra test scenarios beyond AC.
+✅ ONLY GENERATE:
+   ✓ One test case per AC bullet point
+   ✓ Negative test ONLY if AC explicitly mentions a negative scenario
+   ✓ Test cases that DIRECTLY verify a specific AC requirement
 
-4. NO HALLUCINATION — only verify what's in the AC.
-   - If AC doesn't mention something, do NOT test it.
+═══════════════════════════════════════════════════════
+🚨 HOW TO COUNT AC POINTS — DO THIS FIRST
+═══════════════════════════════════════════════════════
 
-5. Add IMPORTANT basic test cases ONLY if logically needed:
-   - Page load verification (if AC is about a page).
-   - Critical UI elements visible (if AC mentions UI components).
-   - Add only what's logically needed — do NOT add fixed count.
+Before writing ANY test case:
+1. READ the AC carefully
+2. COUNT distinct testable points (each bullet, each "Then" statement)
+3. WRITE that exact count in your output: "Detected X AC points"
+4. Generate AT MOST X test cases
+5. Each test case must DIRECTLY map to ONE AC point
 
-6. NO GARBAGE — every test case must be DIRECTLY relevant to AC.
+EXAMPLE:
+AC has these points:
+   • First product = reference product (1 point)
+   • Reference stays first regardless of filters (1 point)
+   • "Reference Product" label + star icon (1 point)
+   • All eligible facets auto-enabled (1 point)
+   • Stock Level facet excluded (1 point)
+   • In-stock filter auto-enabled (1 point)
+   • Only 100% matching products (1 point)
+   • Out of customer range → standard category page (1 point)
+
+Total: 8 AC points → Generate AT MOST 8 test cases (could be 6-8)
+
+═══════════════════════════════════════════════════════
+🚨 USE WEBSITE_KNOWLEDGE ONLY FOR NAVIGATION
+═══════════════════════════════════════════════════════
+
+The WEBSITE_KNOWLEDGE above tells you HOW to navigate.
+Use it ONLY for the steps to reach the page mentioned in AC.
+Do NOT use it to invent extra test cases.
+
+For example:
+- AC mentions "alternative PLP" → use WEBSITE_KNOWLEDGE to know
+  HOW to navigate there (login → mega menu → product → button)
+- AC does NOT mention "Start refining your result" message →
+  do NOT add a test for it, even though WEBSITE_KNOWLEDGE mentions it
 
 ═══════════════════════════════════════════════════════
 🚨 CSV FORMAT RULES — STRICTLY FOLLOW THIS
 ═══════════════════════════════════════════════════════
 
-7. CSV has EXACTLY 4 columns in this order:
+1. CSV has EXACTLY 4 columns:
    Column 1: Test Case Title
    Column 2: Steps to Reproduce
    Column 3: Expected Result
    Column 4: Actual Result
 
-8. 🚨 CRITICAL: NEVER put step numbers ("Step 1:", "Step 9:", "Step 15:")
-   inside the step text!
+2. NEVER put step numbers ("Step 1:", "Step 9:") in step text!
    ❌ WRONG: "Step 9: From the mega menu"
-   ❌ WRONG: "Step 15: Verify the presence of Reference Product label"
    ✅ CORRECT: "From the mega menu, click on any subcategory"
-   ✅ CORRECT: "Verify the Reference Product label appears on the card"
 
-9. 🚨 CRITICAL: Title column ONLY contains the test case title.
-   Title is the SAME for all rows of one test case.
-   ❌ WRONG: Title = "Step 15: Verify Reference Product"
-   ✅ CORRECT: Title = "Verify whether user is able to see Reference Product"
+3. Title column = ONLY the test case title.
+   Title is SAME for all rows of one test case.
 
-10. 🚨 CRITICAL: Each row in CSV = ONE step of a test case.
-    Title repeats for every step of the same test case.
-    Steps are plain action sentences (no numbering inside).
+4. Each row in CSV = ONE step of a test case.
+   Title repeats for every step of the same test case.
 
-11. EXAMPLE of CORRECT CSV:
-    "Verify whether user is able to see Reference Product","Launch the following url ...","User should be able to launch the url","User is able to launch the url"
-    "Verify whether user is able to see Reference Product","Click on Partner link","User should be able to click partner link","User is able to click partner link"
-    "Verify whether user is able to see Reference Product","Click on Household appliances from top menu","User should be able to click menu","User is able to click menu"
-    (... title repeats for ALL steps of this TC ...)
+5. EXAMPLE of CORRECT CSV (1 TC = multiple rows):
+   "Verify whether user is able to see Reference Product","Launch URL...","Should launch","Able to launch"
+   "Verify whether user is able to see Reference Product","Click Partner link","Should click","Able to click"
+   "Verify whether user is able to see Reference Product","Click Household appliances","Should click","Able to click"
+   (... title repeats for ALL steps of this TC ...)
 
 ═══════════════════════════════════════════════════════
 🚨 STEPS TO REPRODUCE — DETAILED & GENERIC
 ═══════════════════════════════════════════════════════
 
-12. Each step must be ACTIONABLE — a tester can directly execute it.
+6. Each step must be ACTIONABLE — tester can directly execute.
 
-13. Use GENERIC phrasing for navigation (do NOT pick specific category names):
-    ❌ DON'T: "Click Cooking → Hobs → Gas hobs"
-    ✅ DO: "Click on Household appliances from top menu"
-    ✅ DO: "Navigate to any PLP category from mega menu"
-    ✅ DO: "Select any product with status = Out of stock / Expected to be available"
+7. Use GENERIC phrasing for navigation (don't pick specific category):
+   ❌ DON'T: "Click Cooking → Hobs → Gas hobs"
+   ✅ DO: "Navigate to any PLP category from mega menu"
+   ✅ DO: "Select any product with status = Out of stock / Expected to be available"
 
-14. Write EXACT navigation flow — NEVER skip intermediate steps:
-    ❌ DON'T: "Navigate to PLP for alternative products"
-    ✅ DO: Multiple steps showing exact path
+8. Write EXACT navigation flow — NEVER skip intermediate steps.
 
-15. INCLUDE conditions where relevant:
-    "If product status = Out of stock / Expected to be available..."
-    "If alternatives with >=50% similar facets exist..."
-
-16. INCLUDE expected UI behavior:
-    "CTA appears below Add to cart button"
-    "Component scrolls into view on same PDP"
-
-17. For ALTERNATIVE PRODUCTS test cases — use the EXACT logic from
-    WEBSITE_KNOWLEDGE:
-    - "See Similar Products" button → stays on PDP, comparison component appears
-    - "Explore Alternate" button → redirects to new Alternative Product PLP
-    - Both buttons require: status = Out of stock / Expected to be available
-    - Decision is based on similarity match (>=50%)
+9. For ALTERNATIVE PRODUCTS test cases — use the EXACT logic from
+   WEBSITE_KNOWLEDGE:
+   - "See Similar Products" button → stays on PDP, comparison appears
+   - "Explore Alternate" button → redirects to new Alternative PLP
+   - Both buttons require: status = Out of stock / Expected to be available
 
 ═══════════════════════════════════════════════════════
 TITLE FORMAT — STRICT
@@ -566,45 +598,45 @@ NEGATIVE = "Verify whether user is not able to [action]"
 OUTPUT FORMAT
 ═══════════════════════════════════════════════════════
 
-First show titles only:
+FIRST output the AC analysis:
+📊 AC Analysis:
+- Detected AC points: [count]
+- Will generate: [count] test cases (1:1 mapping)
+
+Then show titles only:
 ✅ Generated Test Cases:
 1. Verify whether user is able to [title]
 2. Verify whether user is not able to [title]
 
-Then IMMEDIATELY provide full CSV:
+Then IMMEDIATELY provide full CSV between markers:
 ---CSV START---
 Test Case Title,Steps to Reproduce,Expected Result,Actual Result
 ---CSV END---
 
-CSV Rules — 4 COLUMNS:
-Column 1 - Test Case Title: SAME title repeats for every step (NO step numbers!)
-Column 2 - Steps to Reproduce: Plain action sentences (NO "Step X:" prefix!)
-Column 3 - Expected Result:
-  POSITIVE = "User should be able to [action]"
-  NEGATIVE = "User should not be able to [action]"
-Column 4 - Actual Result:
-  POSITIVE = "User is able to [action]"
-  NEGATIVE = "User is not able to [action]"
+CSV Rules:
+Column 1 - Test Case Title: SAME title repeats for every step
+Column 2 - Steps to Reproduce: Plain action sentences (NO step numbers)
+Column 3 - Expected Result: "User should be able to..." / "User should not be able to..."
+Column 4 - Actual Result: "User is able to..." / "User is not able to..."
 
 STEP STRUCTURE FOR EVERY TEST CASE:
 1. 7 mandatory login steps (always same)
-2. 2-5 detailed navigation steps (generic but complete, no skipping)
-3. Final verification steps based on AC
+2. 2-5 detailed navigation steps (generic but complete)
+3. Final verification step from AC
 
-Use ACTUAL Chiron element names like:
-- "Household appliances", "Marketing & Sales", "Orders" (top menu)
-- "Add to basket-B2B" (PDP button)
-- "View Basket-B2B" (basket popup)
-- "See Similar Products" (PDP — when alternatives with >=50% similar exist)
-- "Explore Alternate" / "Review Alternative Products" (PDP — when no >=50% alternatives)
+Use ACTUAL Chiron element names:
+- "Household appliances", "Marketing & Sales", "Orders"
+- "Add to basket-B2B", "View Basket-B2B"
+- "See Similar Products", "Explore Alternate"
 - "Reference Product" (label with star icon)
-- "Start refining your result" (Alternative PLP filter message)
-- "Compare Products" (PLP button)
-- Wishlist heart icon, Basket cart icon, Notification bell icon
 
-Complete ALL test cases — do NOT stop in the middle!
-NO GARBAGE. STICK TO AC. EVERY TC MUST BE RELEVANT.
-NEVER PUT "Step X:" PREFIXES IN STEPS OR TITLES."""
+🔥 FINAL REMINDER:
+- Count AC points FIRST
+- Generate AT MOST that many test cases
+- ZERO extras, ZERO duplicates, ZERO "nice to have"
+- ONLY direct AC verification
+- Complete ALL test cases — never stop midway
+- NEVER put "Step X:" prefix anywhere"""
 
 
 def get_selenium_prompt(ac_text: str, tc_full_context: str = "", feature: str = "Feature") -> str:
@@ -656,7 +688,10 @@ Generate ALL 4 files clearly separated:
 7. Login URL: https://t1-aeg-qa-a.eluxmkt.com/der/de/b2b/pre-login/
 8. Use WebDriverManager for driver setup
 9. Add meaningful comments referencing the test case being automated
-10. Make code complete and production ready — NO placeholder TODOs"""
+10. Make code complete and production ready — NO placeholder TODOs
+
+🚨 IMPORTANT: You MUST generate ALL 4 FILES (PageObject.java, TestNGTest.java, testng.xml, pom.xml).
+Do NOT stop after 2 files. Keep code concise but complete to fit all 4 files."""
 
 
 def get_bdd_prompt(ac_text: str, tc_full_context: str = "", feature: str = "Feature") -> str:
@@ -705,15 +740,15 @@ Generate ALL 4 files clearly separated:
 2. Scenario name should match the test case title
 3. Each Scenario must implement ALL the steps from that test case
 4. Background section should contain the 7 login steps (don't repeat in each scenario)
-5. Use Given/When/Then keywords appropriately:
-   - Given: Setup/precondition steps
-   - When: Action steps
-   - Then: Verification steps
+5. Use Given/When/Then keywords appropriately
 6. Login URL: https://t1-aeg-qa-a.eluxmkt.com/der/de/b2b/pre-login/
 7. Every step in feature file MUST have matching method in StepDefinitions.java
 8. Use real Chiron element names (See Similar Products, Explore Alternate, Reference Product, etc.)
 9. Add meaningful comments
-10. Make code complete and production ready — NO placeholder TODOs"""
+10. Make code complete and production ready — NO placeholder TODOs
+
+🚨 IMPORTANT: You MUST generate ALL 4 FILES (.feature, StepDefinitions.java, PageObject.java, pom.xml).
+Do NOT stop after 2 files. Keep code concise but complete to fit all 4 files."""
 
 
 def get_summary_prompt(test_cases: list, feature: str) -> str:
@@ -800,7 +835,6 @@ def parse_test_cases_to_list(raw_text: str) -> list:
                         step = parts[1].strip().strip('"')
                         expected = parts[2].strip().strip('"')
                         actual = parts[3].strip().strip('"') if len(parts) >= 4 else ""
-                        # Clean up "Step X:" prefix if AI accidentally added it
                         import re
                         title = re.sub(r'^Step\s+\d+\s*:?\s*', '', title, flags=re.IGNORECASE).strip()
                         step = re.sub(r'^Step\s+\d+\s*:?\s*', '', step, flags=re.IGNORECASE).strip()
@@ -893,9 +927,13 @@ def render_block(block: dict, idx: int):
             files = block.get("files", {})
             if files:
                 st.markdown("### 🤖 Selenium TestNG — Generated Files")
-                st.info("📦 Download ZIP contains all 4 files ready for your Java project!")
+                num_files = len(files)
+                if num_files < 4:
+                    st.warning(f"⚠️ Only {num_files} of 4 files generated. Try regenerating if needed.")
+                else:
+                    st.info(f"📦 Download ZIP contains all {num_files} files ready for your Java project!")
                 st.download_button(
-                    label="📦 Download All Files (ZIP)",
+                    label=f"📦 Download All Files (ZIP) — {num_files} files",
                     data=block["zip_bytes"],
                     file_name=block["zip_filename"],
                     mime="application/zip",
@@ -921,9 +959,13 @@ def render_block(block: dict, idx: int):
             files = block.get("files", {})
             if files:
                 st.markdown("### 📝 Cucumber BDD — Generated Files")
-                st.info("📦 Download ZIP contains all 4 files ready for your Java project!")
+                num_files = len(files)
+                if num_files < 4:
+                    st.warning(f"⚠️ Only {num_files} of 4 files generated. Try regenerating if needed.")
+                else:
+                    st.info(f"📦 Download ZIP contains all {num_files} files ready for your Java project!")
                 st.download_button(
-                    label="📦 Download All Files (ZIP)",
+                    label=f"📦 Download All Files (ZIP) — {num_files} files",
                     data=block["zip_bytes"],
                     file_name=block["zip_filename"],
                     mime="application/zip",
@@ -1160,19 +1202,21 @@ def handle_generate_tc(ac_text: str, feature: str):
             messages=[{"role": "user", "content": prompt}],
             system=(
                 "You are a QA expert who knows the AEG Chiron portal navigation deeply. "
-                "STRICT RULE: Every Test Case Title MUST start with "
-                "'Verify whether user is able to' OR 'Verify whether user is not able to'. "
-                "Show titles as numbered list first, then ALWAYS generate full CSV. "
-                "CSV starts with ---CSV START--- and ends with ---CSV END---. "
-                "NEVER skip CSV. Complete ALL test cases without stopping. "
-                "Use real Chiron element names. "
-                "🚨 STICK STRICTLY TO AC — do NOT add extra test cases not in AC. "
+                "🚨 STRICT 1:1 AC MAPPING — Count AC bullet points first. "
+                "Generate AT MOST that many test cases. ZERO extras. "
+                "🚨 Every Title MUST start with 'Verify whether user is able to' "
+                "OR 'Verify whether user is not able to'. "
+                "🚨 First show '📊 AC Analysis: Detected X AC points, Will generate X test cases'. "
+                "Then show titles list, then full CSV between ---CSV START--- and ---CSV END---. "
+                "🚨 NO 'logically needed' basics, NO 'nice to have' extras, NO duplicates. "
+                "🚨 ONLY generate test cases that DIRECTLY map to an AC bullet point. "
                 "🚨 Use generic navigation phrasing (any PLP category, any product with status...). "
-                "🚨 Use detailed step-by-step navigation — never skip intermediate steps. "
-                "🚨 NEVER put 'Step X:' prefix in step text or title text! "
-                "🚨 Title column = ONLY the test case title (NEVER step text). "
-                "🚨 Step column = ONLY plain action sentence (NO step numbers)."
+                "🚨 NEVER put 'Step X:' prefix in step text or title text. "
+                "🚨 Title column = ONLY title (NEVER step text). "
+                "🚨 Step column = ONLY plain action sentence. "
+                "Complete ALL test cases without stopping."
             ),
+            max_tokens=TOKEN_BUDGETS["test_cases"],
         )
 
     display_text = extract_display_text(reply)
@@ -1215,7 +1259,6 @@ def handle_generate_selenium(ac_text: str, feature: str):
         st.warning("⚠️ Please paste ticket details first!")
         return
 
-    # 🔥 FIX: Build FULL test case context (titles + steps + expected)
     tc_full_context = build_full_tc_context(st.session_state.last_test_cases)
     has_tcs = bool(st.session_state.last_test_cases)
 
@@ -1228,7 +1271,7 @@ def handle_generate_selenium(ac_text: str, feature: str):
     st.session_state.chat_history.append({"role": "user", "content": user_msg})
 
     spinner_msg = (
-        f"⚙️ Generating Selenium TestNG files (linked to {len(st.session_state.last_test_cases)} TC steps)..."
+        f"⚙️ Generating Selenium TestNG (4 files, linked to {len(st.session_state.last_test_cases)} TC steps)..."
         if has_tcs else
         f"⚙️ Generating Selenium TestNG files using {st.session_state.selected_model}..."
     )
@@ -1240,13 +1283,14 @@ def handle_generate_selenium(ac_text: str, feature: str):
                 "You are a Senior Selenium Automation Engineer who knows the AEG Chiron portal. "
                 "Generate ALL 4 files separated by ===FILE: filename=== markers. "
                 "Files: PageObject.java, TestNGTest.java, testng.xml, pom.xml. "
-                "Use real Chiron element names in locators. "
-                "🚨 If test cases are provided, generate ONE @Test method per test case — match exactly. "
-                "🚨 Each @Test method must implement ALL the steps shown in that test case. "
-                "🚨 Use TestNG Assert to validate Expected Result for each step. "
+                "🚨 If test cases provided, generate ONE @Test method per test case. "
+                "🚨 Each @Test method must implement ALL steps shown in that test case. "
+                "🚨 Use TestNG Assert to validate Expected Result. "
                 "🚨 Login steps go in @BeforeClass — do NOT repeat in each @Test. "
-                "Make code complete and production ready."
+                "🚨 You MUST generate ALL 4 FILES — keep code concise but complete. "
+                "Use real Chiron element names. Production ready."
             ),
+            max_tokens=TOKEN_BUDGETS["selenium"],  # 21k = max safe limit
         )
 
     files = parse_multi_file_response(reply)
@@ -1299,6 +1343,7 @@ def handle_analyze_screenshot(ac_text: str, feature: str):
             messages=[{"role": "user", "content": "Analyze this UI screenshot carefully and describe every UI element, button, field, text, and section you can see in detail."}],
             system="You are an expert UI analyst. Describe every UI element you see in the screenshot in complete detail.",
             images=st.session_state.images,
+            max_tokens=4000,
         )
 
     if ui_description.startswith("❌"):
@@ -1311,21 +1356,15 @@ def handle_analyze_screenshot(ac_text: str, feature: str):
         reply = call_claude(
             messages=[{"role": "user", "content": tc_prompt}],
             system=(
-                "You are a QA expert who knows the AEG Chiron portal navigation deeply. "
-                "STRICT RULE: Every Test Case Title MUST start with "
-                "'Verify whether user is able to' OR 'Verify whether user is not able to'. "
-                "Show titles as numbered list first, then ALWAYS generate full CSV. "
-                "CSV starts with ---CSV START--- and ends with ---CSV END---. "
-                "NEVER repeat login steps after step 7. "
-                "Use real Chiron navigation flows. "
-                "🚨 STICK STRICTLY TO what's shown in the screenshot — no extra cases. "
-                "🚨 Use generic navigation phrasing. "
-                "🚨 Use detailed step-by-step navigation — never skip intermediate steps. "
-                "🚨 NEVER put 'Step X:' prefix in step text or title text! "
-                "🚨 Title column = ONLY the test case title (NEVER step text). "
-                "🚨 Step column = ONLY plain action sentence (NO step numbers). "
-                "Complete ALL test cases without stopping."
+                "You are a QA expert for AEG Chiron portal. "
+                "🚨 STRICT 1:1 mapping — count AC/UI points, generate AT MOST that many TCs. "
+                "🚨 ZERO extras, NO 'logically needed' basics. "
+                "Every Title must start with 'Verify whether user is able to' or 'is not able to'. "
+                "Show '📊 AC Analysis: Detected X points'. "
+                "Then titles list, then CSV between markers. "
+                "Generic navigation, detailed steps, NO 'Step X:' prefix anywhere."
             ),
+            max_tokens=TOKEN_BUDGETS["screenshot"],
         )
 
     screenshot_ac = ac_text if ac_text.strip() else ui_description
@@ -1369,7 +1408,6 @@ def handle_generate_bdd(ac_text: str, feature: str):
         st.warning("⚠️ Please paste ticket details first!")
         return
 
-    # 🔥 FIX: Build FULL test case context (titles + steps + expected)
     tc_full_context = build_full_tc_context(st.session_state.last_test_cases)
     has_tcs = bool(st.session_state.last_test_cases)
 
@@ -1382,7 +1420,7 @@ def handle_generate_bdd(ac_text: str, feature: str):
     st.session_state.chat_history.append({"role": "user", "content": user_msg})
 
     spinner_msg = (
-        f"📝 Generating BDD Cucumber files (linked to {len(st.session_state.last_test_cases)} TC steps)..."
+        f"📝 Generating BDD Cucumber (4 files, linked to {len(st.session_state.last_test_cases)} TC steps)..."
         if has_tcs else
         f"📝 Generating BDD Cucumber files using {st.session_state.selected_model}..."
     )
@@ -1391,17 +1429,17 @@ def handle_generate_bdd(ac_text: str, feature: str):
         reply = call_claude(
             messages=[{"role": "user", "content": prompt}],
             system=(
-                "You are a Senior BDD Automation Engineer who knows the AEG Chiron portal. "
+                "You are a Senior BDD Automation Engineer who knows AEG Chiron portal. "
                 "Generate ALL 4 files separated by ===FILE: filename=== markers. "
                 "Files: .feature file, StepDefinitions.java, PageObject.java, pom.xml. "
-                "Use real Chiron navigation flows. "
-                "🚨 If test cases are provided, generate ONE Scenario per test case — match exactly. "
-                "🚨 Scenario name should match the test case title. "
-                "🚨 Each Scenario must implement ALL the steps from that test case. "
-                "🚨 Background must contain the 7 login steps — do NOT repeat in scenarios. "
+                "🚨 If test cases provided, generate ONE Scenario per test case. "
+                "🚨 Each Scenario must implement ALL steps from that test case. "
+                "🚨 Background must contain 7 login steps — don't repeat in scenarios. "
+                "🚨 You MUST generate ALL 4 FILES — keep code concise but complete. "
                 "Every step in feature file MUST have matching method in StepDefinitions.java. "
-                "Make code complete and production ready."
+                "Production ready."
             ),
+            max_tokens=TOKEN_BUDGETS["bdd"],  # 21k = max safe limit
         )
 
     files = parse_multi_file_response(reply)
@@ -1454,6 +1492,7 @@ def handle_summary_report(ac_text: str, feature: str):
         reply = call_claude(
             messages=[{"role": "user", "content": prompt}],
             system="You are a QA Test Lead writing professional reports for QA Managers. Be concise and professional.",
+            max_tokens=TOKEN_BUDGETS["summary"],
         )
 
     report_bytes = reply.encode("utf-8")
@@ -1537,6 +1576,7 @@ if user_prompt:
             messages=api_messages,
             system=system_msg,
             images=(st.session_state.images if use_image else None),
+            max_tokens=TOKEN_BUDGETS["free_chat"],
         )
 
     push_block({"type": "chat", "role": "assistant", "content": reply})

@@ -444,6 +444,307 @@ KEY: Only ONE button shows at a time.
   2. Mega menu shows: Job Status | Order search | Direct order | Contact us
 
 ═══════════════════════════════════════════════════════
+🛒 CHECKOUT (DELIVERY) PAGE — DEEP DIVE
+═══════════════════════════════════════════════════════
+
+▶ HOW TO REACH:
+  - Click Basket icon 🛒 (top right) OR "View Basket-B2B" from side panel
+  - URL pattern: /de-de/b2b/checkout-v2/
+  - Page heading shows "Delivery" (NOT "Checkout")
+
+▶ PAGE LAYOUT (top to bottom — 4 sections in this order):
+  1. Delivery section
+  2. Products section
+  3. Price summary section
+  4. Confirmation section
+
+═══════════════════════════════════════════════════════
+SECTION 1: DELIVERY
+═══════════════════════════════════════════════════════
+
+Contains (in order):
+  a) Purchase order ID — text field, placeholder "e.g 123 456 789 (reference ID)"
+  b) Selected store — dropdown (e.g., "70060121 Möbelland Hochtaunus GmbH...")
+  c) Delivery options — radio buttons (single-select)
+  d) Requested delivery date — calendar picker
+  e) Delivery instructions — expandable text area
+
+DELIVERY OPTIONS — radio buttons (single-select):
+   ⚪ Alternative delivery address
+   🔴 Store delivery (currently default)
+
+   Other options based on customer authorization (B2B API):
+        - Home delivery (SalesDocType=ZSO, OrderReason=04, ShippingCondition=SC04)
+        - Home delivery with carry in (SC07)
+        - Trade order, Express, Site, etc.
+
+CURRENT BEHAVIOR (Today):
+   - "Alternative delivery address" radio:
+     → On selection: inline form panel EXPANDS below
+     → Required fields: Recipient, E-mail, Phone, Address, 
+       Zip/Postal code, City
+   
+   - "Store delivery" radio:
+     → On selection: NO form expands (currently)
+     → Just selects the option, no fields to fill
+
+FUTURE BEHAVIOR (Expected):
+   - "Store delivery" may also expand a form (similar to 
+     Alternative delivery address) in upcoming releases
+   - Test cases for current sprint should NOT expect 
+     Store delivery form
+   - Only generate Store delivery form test cases when 
+     AC explicitly mentions it
+
+GENERAL RULE:
+   - Switching between radio options: previous selection 
+     collapses (if expanded), new selection shows its panel
+   - Other delivery types (Home delivery, Home delivery 
+     with carry in) follow same pattern with their own 
+     specific form fields
+
+ALTERNATIVE DELIVERY ADDRESS form (when radio selected):
+  Personal Details (top label):
+     * Recipient (required) — text field
+     * E-mail (required) — text field, max 32 chars
+     * Phone number (required) — placeholder "+46 123 45 678", max 18 chars
+  Address Details:
+     * Address (required) — full width, max 32 chars
+     * Zip/Postal code (required) — max 8 chars
+     * City (required) — max 20 chars
+  - Asterisk * indicates required field
+  - Top right shows "Mandatory*" label
+  - Validations:
+     - Email format check: "Enter a valid email address"
+     - Phone format check: "Enter a valid phone number"
+     - Required fields: inline error on blur/submit
+     - Errors clear automatically when fixed
+
+REQUESTED DELIVERY DATE (Calendar):
+  - Helper text: "This is a requested date that we try to match. 
+                  The confirmed delivery date will be updated on product level."
+  - Format: DD/MM/YYYY (German market)
+  - Field has X icon (clear) + 📅 icon (open calendar)
+  - Pre-selected: requested date from order
+  - Available dates: from B2B Calendar API (SAP-based)
+  - Non-available dates: greyed out, NON-SELECTABLE
+  - Current month + next month preloaded
+  - Scroll to other months → loads next/prev 3 months (loading state shown)
+  - Change Ship To → calendar refreshes to first available date
+  - Change Order Type → calendar refreshes
+  - Selected date saved/persisted to order header
+
+DELIVERY INSTRUCTIONS:
+  - Expandable section with arrow ⌄
+  - Text area with "Placeholder text"
+  - Helper text: "Please note, not delivery address!"
+  - Optional field
+
+═══════════════════════════════════════════════════════
+SECTION 2: PRODUCTS
+═══════════════════════════════════════════════════════
+
+EMPTY CART STATE:
+  - Warning displayed: "The cart is empty - Add products to complete the order"
+
+LINE ITEM LAYOUT (per product, in this exact order):
+  - Thumbnail (small product image, click → opens PDP in NEW tab)
+  - Model ID (e.g., "HK857870IB")
+  - PNC (e.g., "PNC 949 598 123")
+  - Product Title (click → opens PDP in NEW tab)
+  - Trash icon 🗑️ (delete this line item)
+  - Quantity controls: [-] [number input] [+]
+  - Unit Price (e.g., "7.650,00 €")
+  - Line Price (e.g., "7.650,00 €")
+
+BELOW EACH PRODUCT (gray info box):
+  - Quantity: X
+  - Estimated Delivery: [Month Day, Year] (e.g., "May 11, 2026")
+
+THUMBNAIL RULES:
+  - If image fails to load → default placeholder shown
+  - No broken image displayed
+
+PNC & MODEL ID:
+  - Must be readable, not truncated
+  - If too long → tooltip or text wrap
+
+QUANTITY CONTROLS:
+  - [-] decreases by min packaging quantity (usually 1)
+  - [+] increases by min packaging quantity
+  - [-] disabled at minimum (1 or default packaging qty)
+  - [+] disabled at maximum OR shows "Maximum quantity reached"
+  - Field accepts only whole numbers
+  - Non-multiple of packing qty: accepted, but SAP returns error on availability check
+  - On change: line price recalculates, cart totals update immediately
+  - On failure: quantity reverts to previous + error toast
+
+REMOVE PRODUCT (Trash icon):
+  - Click trash 🗑️ → product removed
+  - Cart totals (item count, totals) update immediately
+  - Success toast: "Item removed"
+  - On failure: error toast displayed, item stays
+  - If last item removed → empty cart state shown
+
+PARTIAL DELIVERY scenario:
+  - Items can be split into multiple shipments
+  - Multiple delivery dates per line item
+  - Each delivery date = SEPARATE row
+  - Quantity shown ahead of each date
+
+DELAYED DELIVERY scenario:
+  - When Requested Date ≠ Estimated Date on a line:
+     → Tooltip displayed next to estimated date
+     → Tooltip is STATIC content
+
+NO DATE AVAILABLE scenario:
+  - SAP message shown: "Date can not be confirmed, but order can be placed"
+
+PRODUCT-LEVEL ERROR / WARNING (Inline):
+  - Inline banner WITHIN affected line item (not global)
+  - Severity icon (warning/error)
+  - Concise message (e.g., "Invalid product reference")
+  - Multiple products can show errors simultaneously
+  - Erroneous line: HIGHLIGHTED border (visual emphasis)
+  - When ANY error exists: Place Order button is DISABLED
+  - Hover Place Order tooltip: "Resolve errors in your cart to continue."
+  - Tooltip references erroneous product (PNC/Model ID/Name)
+  - When error fixed/removed: banner disappears, button enables
+  - Persists across: page refresh, navigation away/back
+  - If validation service fails: "We can't validate products right now" + button disabled
+
+DISCONTINUED PRODUCT (Successor flow):
+  - When product is discontinued AND successor EXISTS:
+     → Inline warning banner: 
+        "This product is obsoleted – Replace product with [PNC or model id]"
+     → SuccessorID is CLICKABLE link → opens PDP in new tab
+     → "Replace product with..." link triggers replacement flow
+     → Loading indicator shown during replace
+     → On SUCCESS:
+         * Successor added to cart
+         * Original obsolete product removed
+         * Replacement inherits SAME quantity as obsolete
+         * Cart totals update
+         * Success toast: "Product replaced successfully"
+     → On FAILURE:
+         * Original product remains unchanged
+         * User-friendly error message shown
+         * No partial state (no duplicates, no mismatched totals)
+     → Services/add-ons:
+         * If compatible → carried over
+         * If incompatible → removed with message
+  - When product is discontinued AND NO successor exists:
+     → Inline message: "This product is obsolete"
+     → NO "Replace product" link/action shown
+
+LOADING STATE:
+  - Skeleton/loading indicator shown while fetching prices/availability
+  - Removed once loaded; rows render with complete information
+
+REFRESH TRIGGERS (re-fetch prices + availability):
+  - Ship To changed
+  - Requested Date changed
+  - Delivery Zip Code changed
+  - Products added / quantity changed / deleted
+  - Services added / removed
+
+PERSISTENCE:
+  - Quantity changes persist after: page refresh, navigation away/back
+  - Removed products stay removed
+  - Quantity, unit price, line price always remain consistent (no mismatch)
+
+═══════════════════════════════════════════════════════
+SECTION 3: PRICE SUMMARY
+═══════════════════════════════════════════════════════
+
+NORMAL STATE:
+  - Heading: "Price summary"
+  - Shows price breakdown (Total amount, Discount, VAT, etc.)
+  - Currency: EUR (€) for German market
+  - Format: "7.650,00 €" (dot for thousands, comma for decimals)
+
+ERROR STATE (when invalid items in cart):
+  - Message shown: "Price summary can not be loaded with invalid items in cart"
+
+DATA SOURCE:
+  - Prices retrieved from PriceCompleteInfo B2B API
+  - Includes selected partial delivery option in API request
+
+═══════════════════════════════════════════════════════
+SECTION 4: CONFIRMATION
+═══════════════════════════════════════════════════════
+
+  - Heading: "Confirmation"
+  - Checkbox (red, DEFAULT CHECKED): "Send order confirmation via email to:"
+  - Email field — pre-filled from user profile
+    (e.g., "hamsharubini.udayakumar@electrolux.com")
+  - User can EDIT email
+  - User can UNCHECK if they don't want confirmation email
+
+═══════════════════════════════════════════════════════
+ITEM COUNT RULES
+═══════════════════════════════════════════════════════
+
+  - Item count = SUM of line item quantities
+  - EXCLUDES services
+  - Updates immediately on quantity/remove changes
+
+═══════════════════════════════════════════════════════
+PERSISTENCE RULES (Checkout Page)
+═══════════════════════════════════════════════════════
+
+These persist after page refresh AND navigation away/back:
+  - Selected delivery option
+  - Entered Alternative delivery address details (all fields)
+  - Selected requested delivery date
+  - Quantity changes
+  - Product removals
+  - Email confirmation choice
+  - Product error/warning states
+
+═══════════════════════════════════════════════════════
+ORDER TYPE → SAP MAPPING (for delivery options)
+═══════════════════════════════════════════════════════
+
+Trade display      → ZSO / S03 / -
+Employee order     → ZSO / S10 / -
+Pick-up            → ZSO / -   / 2
+Home Delivery      → ZSO / S04 / 4
+Home Del+Carry     → ZSO / S04 / 7
+Express            → ZSO / -   / 3
+Site order         → ZSO / -   / 11
+Spares Warranty    → ZSO / S74 / -
+Alternative addr   → ZSO / -   / -
+Consignment        → ZKF / -   / -
+Trade order        → ZSO / -   / -
+
+(Format: SalesDocType / OrderReason / ShippingCondition)
+
+═══════════════════════════════════════════════════════
+KEY ELEMENT NAMES (use these exactly in test cases)
+═══════════════════════════════════════════════════════
+
+  - "Delivery" (page heading, NOT "Checkout")
+  - "Purchase order ID" (field)
+  - "Selected store" (dropdown)
+  - "Delivery options" (radio group)
+  - "Alternative delivery address" / "Store delivery" / 
+    "Home delivery" / "Home delivery with carry in"
+  - "Requested delivery date" (calendar)
+  - "Delivery instructions" (text area)
+  - "Recipient" / "E-mail" / "Phone number" / 
+    "Address" / "Zip/Postal code" / "City" (form fields)
+  - "Mandatory*" (label for required fields)
+  - "Products" (section)
+  - Trash icon 🗑️ (remove)
+  - "+" / "-" buttons (quantity)
+  - "Unit Price" / "Line Price" (per product)
+  - "Quantity" / "Estimated Delivery" (info box below product)
+  - "Price summary" (section)
+  - "Confirmation" (section)
+  - "Send order confirmation via email to:" (checkbox)
+
+═══════════════════════════════════════════════════════
 RULES FOR INTERMEDIATE STEPS GENERATION
 ═══════════════════════════════════════════════════════
 

@@ -8,6 +8,8 @@ import os
 import io
 import csv
 import zipfile
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
 # ---------- PAGE CONFIG (must be first Streamlit call) ----------
 st.set_page_config(
@@ -77,6 +79,8 @@ defaults = {
     "dl_csv_data": None,
     "dl_csv_filename": "",
     "dl_csv_label": "",
+    "dl_excel_data": None,
+    "dl_excel_filename": "",
     "dl_selenium_data": None,
     "dl_selenium_filename": "",
     "dl_bdd_data": None,
@@ -391,41 +395,153 @@ NAVIGATION FLOWS — USE THESE FOR INTERMEDIATE STEPS
   2. Click compare button to view comparison
 
 ═══════════════════════════════════════════════════════
-🔥 ALTERNATIVE PRODUCTS LOGIC — IMPORTANT (PDP)
+🔥 ALTERNATIVE PRODUCTS LOGIC — CRITICAL (PDP) — UPDATED
 ═══════════════════════════════════════════════════════
 
-CONDITION FOR BOTH BUTTONS:
-Both buttons appear ONLY when product status is:
-  • "Out of stock" OR
-  • "Expected to be available from [date]"
+🚨 THERE ARE THREE BUTTONS — DO NOT CONFUSE THEM!
+   Even though TWO buttons have similar names, they are 
+   in DIFFERENT LOCATIONS and have DIFFERENT BEHAVIORS!
 
-(Both buttons NEVER appear for in-stock regular products)
+TRIGGER CONDITION (For all alternative product buttons on PDP):
+   Product status must be one of:
+   • "Out of stock-B2B" OR
+   • "B2B - Expected to be available from [date]"
+   
+   ❌ Buttons NEVER appear for in-stock products
 
-DECISION LOGIC — Which button shows:
+═══════════════════════════════════════════════════════
+🔘 BUTTON 1: "See alternative products" (on PDP)
+═══════════════════════════════════════════════════════
 
-CASE A: Alternatives with >=50% similar facets EXIST
-→ Button shown: "See Similar Products" (under Add to cart)
-→ Click action: STAYS on same PDP
-→ Behavior: Scrolls down → "Alternative Product Comparison Component" appears
-→ Component shows:
-  • Reference Product card
-  • Best Match products (>=90% facet similarity)
-  • Good Match products (>=75% facet similarity)
-  • Each card: match %, price, Add to Cart, availability
+LOCATION: 
+   - On PDP page
+   - Directly UNDER "Add to basket-B2B" button
+   - Has icon: ⇄ (arrows)
 
-CASE B: NO alternatives with >=50% similar facets
-→ Button shown: "Explore Alternate" (also "Review Alternative Products")
-→ Click action: REDIRECTS to NEW Alternative Product PLP
-→ New PLP page shows:
-  • "Start refining your result" filter message
-  • Reference Product card FIRST with star icon + "Reference Product" label
-  • Pre-selected facets (excluding Stock Level facet)
-  • In-stock filter auto-enabled
-  • Only 100% matching products displayed
-  • If no matches: "Edit the filters to see suitable alternatives" message
-  • URL pattern: /category/?viewAlternatives=PNC
+CONDITION TO SHOW:
+   - Product is out of stock / expected to be available
+   - AND alternatives with ≥50% similar facets EXIST
 
-KEY: Only ONE button shows at a time.
+CLICK ACTION:
+   - STAYS on same PDP (NO page redirect)
+   - Scrolls down to "Similar products" component below
+   - Component title: "Similar products"
+   - Component subtitle: "Alternative products that may suit your needs"
+
+WHAT USER SEES IN COMPONENT:
+   - Reference Product card (with "Reference Product" red label on top)
+   - Best Match products (≥90% facet similarity) on right side
+   - Good Match products (≥75% facet similarity)
+   - Each card shows:
+     * Product image
+     * Model ID (e.g., BD321P)
+     * PNC
+     * Product title
+     * Rating (stars)
+     * "Out of stock-B2B" or "In stock-B2B" status
+     * Add to basket-B2B button (red)
+     * Wishlist heart icon
+   - Below cards: "Show differences" toggle, comparison details
+   - Sections: General, Technology, etc. with comparison rows
+   - 🚨 TOP RIGHT of this component: ANOTHER button → see BUTTON 3 below
+
+═══════════════════════════════════════════════════════
+🔘 BUTTON 2: "Explore alternative products" (on PDP directly)
+═══════════════════════════════════════════════════════
+
+LOCATION:
+   - On PDP page
+   - Directly UNDER "Add to basket-B2B" button
+   - Has icon: ▶ (arrow right)
+   - 🚨 SAME LOCATION as Button 1 — but only ONE shows at a time
+
+CONDITION TO SHOW:
+   - Product is out of stock / expected to be available
+   - AND NO alternatives with ≥50% similar facets exist
+
+CLICK ACTION:
+   - REDIRECTS to OLD NORMAL category PLP page
+   - 🚨 THIS IS THE KEY DIFFERENCE FROM BUTTON 3!
+   - Behavior is like clicking the category from mega menu:
+     * NO pre-selected filters
+     * NO "Start refining your result" message
+     * NO Reference Product card
+     * NO star icon
+     * Just regular category browsing
+     * Standard PLP with all products of that category
+
+═══════════════════════════════════════════════════════
+🔘 BUTTON 3: "Explore alternative products" (inside Similar products component)
+═══════════════════════════════════════════════════════
+
+LOCATION:
+   - INSIDE the "Similar products" component
+   - TOP RIGHT corner of the component
+   - Visible ONLY after clicking Button 1 ("See alternative products")
+   - User must scroll down on PDP to see this component
+   - 🚨 SAME NAME as Button 2 — but DIFFERENT location + behavior!
+
+CLICK ACTION:
+   - REDIRECTS to NEW Alternative Product PLP page
+   - 🚨 This is the "smart" alternative PLP with pre-selected filters
+
+NEW ALTERNATIVE PLP SHOWS:
+   - "Start refining your result" filter message
+   - Reference Product card FIRST (with star icon ⭐ and "Reference Product" label)
+   - Pre-selected facets (excluding Stock Level facet)
+   - In-stock filter auto-enabled
+   - Only 100% matching products displayed
+   - If no matches: "Edit the filters to see suitable alternatives" message
+   - URL pattern: /category/?viewAlternatives=PNC
+
+═══════════════════════════════════════════════════════
+🔥 CRITICAL SUMMARY TABLE
+═══════════════════════════════════════════════════════
+
+┌──────────────────────────────────────────────────────────────────┐
+│ BUTTON NAME              │ LOCATION              │ GOES TO          │
+├──────────────────────────────────────────────────────────────────┤
+│ "See alternative         │ On PDP, under         │ Stays on PDP,    │
+│  products"               │ Add to cart           │ scrolls to       │
+│  (Button 1)              │                       │ Similar products │
+│                          │                       │ component        │
+├──────────────────────────────────────────────────────────────────┤
+│ "Explore alternative     │ On PDP, under         │ OLD NORMAL PLP   │
+│  products"               │ Add to cart           │ (no filters,     │
+│  (Button 2)              │ (when no alts exist)  │ no reference)    │
+├──────────────────────────────────────────────────────────────────┤
+│ "Explore alternative     │ INSIDE Similar        │ NEW Alt PLP      │
+│  products"               │ products component,   │ (with filters,   │
+│  (Button 3)              │ top right             │ reference card,  │
+│                          │                       │ 100% matches)    │
+└──────────────────────────────────────────────────────────────────┘
+
+═══════════════════════════════════════════════════════
+🚨 CRITICAL RULES FOR TEST CASE GENERATION
+═══════════════════════════════════════════════════════
+
+1. NEVER assume both Button 1 and Button 2 appear together on PDP
+   → Only ONE shows at a time based on alternatives availability
+
+2. When AC mentions "Explore alternative products" — CAREFULLY 
+   identify WHICH button:
+   → If AC says "on PDP under Add to cart" → Button 2 → goes to OLD PLP
+   → If AC says "inside similar products component" or "top right of component" 
+     → Button 3 → goes to NEW Alt PLP with filters
+
+3. The NEW Alternative PLP features (filters, reference, 100% match) 
+   ONLY apply to Button 3 (inside component), NOT Button 2 (directly on PDP)
+
+4. "Reference Product" label/star icon appears in:
+   ✓ Similar products component (after Button 1 click)
+   ✓ New Alt PLP (after Button 3 click)
+   ✗ NEVER on old normal PLP (after Button 2 click)
+
+5. Pre-selected filters appear ONLY:
+   ✓ On new Alt PLP (after Button 3 click)
+   ✗ NEVER on old normal PLP (after Button 2 click)
+
+═══════════════════════════════════════════════════════
 
 ▶ TO ACCESS NOTIFICATIONS:
   1. Click Notification bell 🔔 (top right, with unread count)
@@ -752,10 +868,11 @@ RULES FOR INTERMEDIATE STEPS GENERATION
 2. Use GENERIC phrasing for navigation (don't pick specific category):
    - "Navigate to any PLP category" (NOT "Cooking → Hobs")
    - "Select any product with status = Out of stock / Expected to be available"
-3. Use REAL element names (Add to basket-B2B, See Similar Products, Explore Alternate, Reference Product)
+3. Use REAL element names (Add to basket-B2B, See alternative products, Explore alternative products, Reference Product)
 4. NEVER repeat login steps after step 7
 5. NEVER skip intermediate steps
 6. Each step must be ACTIONABLE
+7. 🚨 When dealing with alternative products: ALWAYS check WHICH "Explore alternative products" button (Button 2 on PDP vs Button 3 inside component)
 """
 
 
@@ -806,6 +923,57 @@ EVERY test case MUST start with these 7 login steps in CSV:
    ✓ Test cases that DIRECTLY verify a specific AC requirement
 
 ═══════════════════════════════════════════════════════
+🚨 ZERO DUPLICATES RULE — STRICTLY ENFORCED
+═══════════════════════════════════════════════════════
+
+🔥 NEVER GENERATE DUPLICATE TEST CASES:
+   ❌ Do NOT create two test cases with similar/same titles
+   ❌ Do NOT rephrase same scenario as different test cases
+   ❌ Do NOT split one logical check into multiple test cases
+   ❌ Do NOT create test cases that verify the same thing
+      with minor wording differences
+
+✅ BEFORE GENERATING EACH TEST CASE — ASK:
+   1. Does any previous test case ALREADY verify this?
+   2. Is this just a rephrasing of an existing one?
+   3. Could this be merged with another test case?
+   → If YES to any → SKIP this test case
+
+✅ EACH TEST CASE MUST BE UNIQUE:
+   - Each title must be DIFFERENT from all others
+   - Each scenario must be DIFFERENT from all others
+   - Each verification must be UNIQUE
+
+EXAMPLES OF DUPLICATES TO AVOID:
+   ❌ "Verify whether user is able to see Reference Product card"
+   ❌ "Verify whether user is able to view Reference Product card"
+   (Same thing, different wording — KEEP ONLY ONE)
+
+   ❌ "Verify whether user is able to click See Similar Products button"
+   ❌ "Verify whether user is able to view Similar Products component after clicking See Similar"
+   (Related but second is just continuation — MERGE INTO ONE)
+
+═══════════════════════════════════════════════════════
+🚨 ALTERNATIVE PRODUCTS — IDENTIFY THE RIGHT BUTTON
+═══════════════════════════════════════════════════════
+
+When AC mentions alternative products or "Explore alternative products":
+
+1. CAREFULLY identify WHICH button the AC refers to:
+   - Button 2 (on PDP, under Add to cart) → goes to OLD NORMAL PLP
+   - Button 3 (inside Similar products component, top right) → goes to NEW Alt PLP
+   
+2. Look for CLUES in AC:
+   - "from PDP" / "under add to cart" / "directly on product page" → Button 2
+   - "Reference Product" / "pre-selected filters" / "star icon" / 
+     "100% match" / "Start refining your result" → Button 3 (NEW Alt PLP)
+   - "after clicking See alternative products" / "from similar products component" → Button 3
+   
+3. NEVER mix up Button 2 and Button 3 behaviors:
+   ❌ Don't say Button 2 shows reference product or filters
+   ❌ Don't say Button 3 goes to plain category PLP
+
+═══════════════════════════════════════════════════════
 🚨 HOW TO COUNT AC POINTS — DO THIS FIRST
 ═══════════════════════════════════════════════════════
 
@@ -815,33 +983,6 @@ Before writing ANY test case:
 3. WRITE that exact count in your output: "Detected X AC points"
 4. Generate AT MOST X test cases
 5. Each test case must DIRECTLY map to ONE AC point
-
-EXAMPLE:
-AC has these points:
-   • First product = reference product (1 point)
-   • Reference stays first regardless of filters (1 point)
-   • "Reference Product" label + star icon (1 point)
-   • All eligible facets auto-enabled (1 point)
-   • Stock Level facet excluded (1 point)
-   • In-stock filter auto-enabled (1 point)
-   • Only 100% matching products (1 point)
-   • Out of customer range → standard category page (1 point)
-
-Total: 8 AC points → Generate AT MOST 8 test cases (could be 6-8)
-
-═══════════════════════════════════════════════════════
-🚨 USE WEBSITE_KNOWLEDGE ONLY FOR NAVIGATION
-═══════════════════════════════════════════════════════
-
-The WEBSITE_KNOWLEDGE above tells you HOW to navigate.
-Use it ONLY for the steps to reach the page mentioned in AC.
-Do NOT use it to invent extra test cases.
-
-For example:
-- AC mentions "alternative PLP" → use WEBSITE_KNOWLEDGE to know
-  HOW to navigate there (login → mega menu → product → button)
-- AC does NOT mention "Start refining your result" message →
-  do NOT add a test for it, even though WEBSITE_KNOWLEDGE mentions it
 
 ═══════════════════════════════════════════════════════
 🚨 CSV FORMAT RULES — STRICTLY FOLLOW THIS
@@ -863,12 +1004,6 @@ For example:
 4. Each row in CSV = ONE step of a test case.
    Title repeats for every step of the same test case.
 
-5. EXAMPLE of CORRECT CSV (1 TC = multiple rows):
-   "Verify whether user is able to see Reference Product","Launch URL...","Should launch","Able to launch"
-   "Verify whether user is able to see Reference Product","Click Partner link","Should click","Able to click"
-   "Verify whether user is able to see Reference Product","Click Household appliances","Should click","Able to click"
-   (... title repeats for ALL steps of this TC ...)
-
 ═══════════════════════════════════════════════════════
 🚨 STEPS TO REPRODUCE — DETAILED & GENERIC
 ═══════════════════════════════════════════════════════
@@ -884,9 +1019,9 @@ For example:
 
 9. For ALTERNATIVE PRODUCTS test cases — use the EXACT logic from
    WEBSITE_KNOWLEDGE:
-   - "See Similar Products" button → stays on PDP, comparison appears
-   - "Explore Alternate" button → redirects to new Alternative PLP
-   - Both buttons require: status = Out of stock / Expected to be available
+   - "See alternative products" button (PDP) → stays on PDP, comparison appears
+   - "Explore alternative products" button on PDP (when no alts) → goes to OLD NORMAL PLP
+   - "Explore alternative products" button INSIDE component → goes to NEW Alt PLP
 
 ═══════════════════════════════════════════════════════
 TITLE FORMAT — STRICT
@@ -928,7 +1063,7 @@ STEP STRUCTURE FOR EVERY TEST CASE:
 Use ACTUAL Chiron element names:
 - "Household appliances", "Marketing & Sales", "Orders"
 - "Add to basket-B2B", "View Basket-B2B"
-- "See Similar Products", "Explore Alternate"
+- "See alternative products", "Explore alternative products"
 - "Reference Product" (label with star icon)
 
 🔥 FINAL REMINDER:
@@ -937,7 +1072,9 @@ Use ACTUAL Chiron element names:
 - ZERO extras, ZERO duplicates, ZERO "nice to have"
 - ONLY direct AC verification
 - Complete ALL test cases — never stop midway
-- NEVER put "Step X:" prefix anywhere"""
+- NEVER put "Step X:" prefix anywhere
+- 🚨 For alternative products: IDENTIFY which button (2 vs 3) — don't mix up!
+- 🚨 ZERO DUPLICATES — Each title and scenario must be UNIQUE"""
 
 
 def get_selenium_prompt(ac_text: str, tc_full_context: str = "", feature: str = "Feature") -> str:
@@ -985,7 +1122,7 @@ Generate ALL 4 files clearly separated:
 3. Each @Test method must implement ALL the steps shown in that test case
 4. Use TestNG Assert to validate the Expected Result for each step
 5. Login steps go in @BeforeClass (don't repeat in each @Test)
-6. Use real Chiron element names in locators (Add to basket-B2B, See Similar Products, Explore Alternate, Reference Product, etc.)
+6. Use real Chiron element names in locators (Add to basket-B2B, See alternative products, Explore alternative products, Reference Product, etc.)
 7. Login URL: https://t1-aeg-qa-a.eluxmkt.com/der/de/b2b/pre-login/
 8. Use WebDriverManager for driver setup
 9. Add meaningful comments referencing the test case being automated
@@ -1044,7 +1181,7 @@ Generate ALL 4 files clearly separated:
 5. Use Given/When/Then keywords appropriately
 6. Login URL: https://t1-aeg-qa-a.eluxmkt.com/der/de/b2b/pre-login/
 7. Every step in feature file MUST have matching method in StepDefinitions.java
-8. Use real Chiron element names (See Similar Products, Explore Alternate, Reference Product, etc.)
+8. Use real Chiron element names (See alternative products, Explore alternative products, Reference Product, etc.)
 9. Add meaningful comments
 10. Make code complete and production ready — NO placeholder TODOs
 
@@ -1174,6 +1311,88 @@ def generate_csv(test_cases: list) -> bytes:
     return output.getvalue().encode("utf-8")
 
 
+def generate_excel(test_cases: list) -> bytes:
+    """
+    Generate professional Excel file with formatting.
+    Manager-ready format with headers, borders, colors.
+    Zero token cost — pure Python file generation.
+    """
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Test Cases"
+    
+    # Headers
+    headers = ["Test Case Title", "Steps to Reproduce", "Expected Result", "Actual Result", "Status"]
+    ws.append(headers)
+    
+    # Style headers — Blue background, white bold text
+    header_font = Font(name="Arial", size=11, bold=True, color="FFFFFF")
+    header_fill = PatternFill("solid", start_color="1F4E78")
+    header_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    thin_border = Border(
+        left=Side(style="thin"),
+        right=Side(style="thin"),
+        top=Side(style="thin"),
+        bottom=Side(style="thin"),
+    )
+    
+    for col in range(1, 6):
+        cell = ws.cell(row=1, column=col)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_align
+        cell.border = thin_border
+    
+    # Data styling
+    data_font = Font(name="Arial", size=10)
+    title_fill = PatternFill("solid", start_color="E7F3FF")  # Light blue for title rows
+    data_align = Alignment(wrap_text=True, vertical="top")
+    
+    # Write data rows
+    prev_title = ""
+    row_num = 2
+    for tc in test_cases:
+        current_title = tc.get("Test Case Title", "")
+        is_first_row_of_tc = current_title != prev_title
+        
+        # Title only on first row of each TC, blank for continuation
+        title_value = current_title if is_first_row_of_tc else ""
+        
+        ws.cell(row=row_num, column=1, value=title_value)
+        ws.cell(row=row_num, column=2, value=tc.get("Steps to Reproduce", ""))
+        ws.cell(row=row_num, column=3, value=tc.get("Expected Result", ""))
+        ws.cell(row=row_num, column=4, value=tc.get("Actual Result", ""))
+        ws.cell(row=row_num, column=5, value=tc.get("Status", "Not Executed"))
+        
+        # Apply styling
+        for col in range(1, 6):
+            cell = ws.cell(row=row_num, column=col)
+            cell.font = data_font
+            cell.alignment = data_align
+            cell.border = thin_border
+            # Highlight title rows (first row of each test case)
+            if is_first_row_of_tc:
+                cell.fill = title_fill
+        
+        prev_title = current_title
+        row_num += 1
+    
+    # Set column widths (professional sizing)
+    ws.column_dimensions["A"].width = 55  # Title
+    ws.column_dimensions["B"].width = 60  # Steps
+    ws.column_dimensions["C"].width = 55  # Expected
+    ws.column_dimensions["D"].width = 55  # Actual
+    ws.column_dimensions["E"].width = 15  # Status
+    
+    # Freeze top row (header stays when scrolling)
+    ws.freeze_panes = "A2"
+    
+    # Save to bytes
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
 def extract_display_text(reply: str) -> str:
     display_text = reply
     if "---CSV START---" in reply:
@@ -1212,15 +1431,31 @@ def render_block(block: dict, idx: int):
             ))
             st.success(
                 f"✅ {len(unique_titles)} test cases generated! "
-                "Full steps + expected in CSV below."
+                "Download in Excel or CSV format below."
             )
-            st.download_button(
-                label=f"📊 Download Excel CSV ({len(unique_titles)} TCs, {len(block['parsed'])} rows)",
-                data=block["csv_bytes"],
-                file_name=block["csv_filename"],
-                mime="text/csv",
-                key=f"dl_csv_{idx}",
-            )
+            
+            # Two download buttons side by side
+            col_excel, col_csv = st.columns(2)
+            with col_excel:
+                st.download_button(
+                    label=f"📊 Download Excel ({len(unique_titles)} TCs)",
+                    data=block["excel_bytes"],
+                    file_name=block["excel_filename"],
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key=f"dl_excel_{idx}",
+                    use_container_width=True,
+                    type="primary",
+                )
+            with col_csv:
+                st.download_button(
+                    label=f"📄 Download CSV ({len(unique_titles)} TCs)",
+                    data=block["csv_bytes"],
+                    file_name=block["csv_filename"],
+                    mime="text/csv",
+                    key=f"dl_csv_{idx}",
+                    use_container_width=True,
+                )
+            
             render_dashboard(block["dashboard"], block["feature"])
 
     elif btype == "selenium_result":
@@ -1401,17 +1636,28 @@ if st.sidebar.button("📄 Test Summary Report", use_container_width=True):
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 📥 Downloads")
 
+if st.session_state.dl_excel_data:
+    st.sidebar.download_button(
+        label="📊 Download Excel",
+        data=st.session_state.dl_excel_data,
+        file_name=st.session_state.dl_excel_filename or "test_cases.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
+        key="sidebar_dl_excel",
+    )
+
 if st.session_state.dl_csv_data:
     st.sidebar.download_button(
-        label=st.session_state.dl_csv_label or "📊 Download CSV",
+        label=st.session_state.dl_csv_label or "📄 Download CSV",
         data=st.session_state.dl_csv_data,
         file_name=st.session_state.dl_csv_filename or "test_cases.csv",
         mime="text/csv",
         use_container_width=True,
         key="sidebar_dl_csv",
     )
-else:
-    st.sidebar.info("Generate test cases to enable download")
+
+if not st.session_state.dl_csv_data and not st.session_state.dl_excel_data:
+    st.sidebar.info("Generate test cases to enable downloads")
 
 if st.session_state.dl_selenium_data:
     st.sidebar.download_button(
@@ -1505,6 +1751,9 @@ def handle_generate_tc(ac_text: str, feature: str):
                 "You are a QA expert who knows the AEG Chiron portal navigation deeply. "
                 "🚨 STRICT 1:1 AC MAPPING — Count AC bullet points first. "
                 "Generate AT MOST that many test cases. ZERO extras. "
+                "🚨 ZERO DUPLICATES — Each test case title must be UNIQUE. "
+                "Before adding a test case, check if it duplicates an existing one. "
+                "If it does, SKIP it. Never rephrase the same scenario as a new TC. "
                 "🚨 Every Title MUST start with 'Verify whether user is able to' "
                 "OR 'Verify whether user is not able to'. "
                 "🚨 First show '📊 AC Analysis: Detected X AC points, Will generate X test cases'. "
@@ -1515,6 +1764,7 @@ def handle_generate_tc(ac_text: str, feature: str):
                 "🚨 NEVER put 'Step X:' prefix in step text or title text. "
                 "🚨 Title column = ONLY title (NEVER step text). "
                 "🚨 Step column = ONLY plain action sentence. "
+                "🚨 For alternative products: identify WHICH button (Button 2 on PDP vs Button 3 inside component). "
                 "Complete ALL test cases without stopping."
             ),
             max_tokens=TOKEN_BUDGETS["test_cases"],
@@ -1529,21 +1779,27 @@ def handle_generate_tc(ac_text: str, feature: str):
     if parsed:
         st.session_state.last_test_cases = parsed
         csv_bytes = generate_csv(parsed)
+        excel_bytes = generate_excel(parsed)
         unique_titles = list(dict.fromkeys(
             tc["Test Case Title"] for tc in parsed if tc.get("Test Case Title")
         ))
         fname = feature.replace(" ", "_")
         csv_filename = f"{fname}_test_cases.csv"
+        excel_filename = f"{fname}_test_cases.xlsx"
         dash = compute_dashboard(parsed, ac_text)
         st.session_state.dl_csv_data = csv_bytes
         st.session_state.dl_csv_filename = csv_filename
-        st.session_state.dl_csv_label = f"📊 Download CSV ({len(unique_titles)} TCs)"
+        st.session_state.dl_csv_label = f"📄 Download CSV ({len(unique_titles)} TCs)"
+        st.session_state.dl_excel_data = excel_bytes
+        st.session_state.dl_excel_filename = excel_filename
         push_block({
             "type": "tc_result",
             "display_text": display_text,
             "parsed": parsed,
             "csv_bytes": csv_bytes,
             "csv_filename": csv_filename,
+            "excel_bytes": excel_bytes,
+            "excel_filename": excel_filename,
             "dashboard": dash,
             "feature": feature,
         })
@@ -1659,6 +1915,7 @@ def handle_analyze_screenshot(ac_text: str, feature: str):
             system=(
                 "You are a QA expert for AEG Chiron portal. "
                 "🚨 STRICT 1:1 mapping — count AC/UI points, generate AT MOST that many TCs. "
+                "🚨 ZERO DUPLICATES — Each test case title must be UNIQUE. Never rephrase same scenario. "
                 "🚨 ZERO extras, NO 'logically needed' basics. "
                 "Every Title must start with 'Verify whether user is able to' or 'is not able to'. "
                 "Show '📊 AC Analysis: Detected X points'. "
@@ -1678,21 +1935,27 @@ def handle_analyze_screenshot(ac_text: str, feature: str):
     if parsed:
         st.session_state.last_test_cases = parsed
         csv_bytes = generate_csv(parsed)
+        excel_bytes = generate_excel(parsed)
         unique_titles = list(dict.fromkeys(
             tc["Test Case Title"] for tc in parsed if tc.get("Test Case Title")
         ))
         fname = f"{feature.replace(' ', '_')}_screenshot"
         csv_filename = f"{fname}_test_cases.csv"
+        excel_filename = f"{fname}_test_cases.xlsx"
         dash = compute_dashboard(parsed, screenshot_ac)
         st.session_state.dl_csv_data = csv_bytes
         st.session_state.dl_csv_filename = csv_filename
-        st.session_state.dl_csv_label = f"📊 Download CSV ({len(unique_titles)} TCs)"
+        st.session_state.dl_csv_label = f"📄 Download CSV ({len(unique_titles)} TCs)"
+        st.session_state.dl_excel_data = excel_bytes
+        st.session_state.dl_excel_filename = excel_filename
         push_block({
             "type": "tc_result",
             "display_text": display_text,
             "parsed": parsed,
             "csv_bytes": csv_bytes,
             "csv_filename": csv_filename,
+            "excel_bytes": excel_bytes,
+            "excel_filename": excel_filename,
             "dashboard": dash,
             "feature": f"{feature} (Screenshot)",
         })

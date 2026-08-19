@@ -96,14 +96,15 @@ for k, v in defaults.items():
 
 # ===============================
 # 💰 SMART TOKEN ALLOCATION
+# (Anthropic safe limit = 21,333 — no streaming required)
 # ===============================
 TOKEN_BUDGETS = {
-    "test_cases": 16000,
-    "selenium":   21000,
-    "bdd":        21000,
-    "screenshot": 16000,
-    "summary":     4000,
-    "free_chat":   8000,
+    "test_cases": 16000,    # CSV usually fits
+    "selenium":   21000,    # MAX safe limit (no streaming needed)
+    "bdd":        21000,    # MAX safe limit (no streaming needed)
+    "screenshot": 16000,    # Vision + test cases
+    "summary":     4000,    # Always small report
+    "free_chat":   8000,    # Conversational
 }
 
 
@@ -134,6 +135,11 @@ def sanitize_messages(messages: list) -> list:
 
 
 def call_claude(messages: list, system: str = "", images: list = None, max_tokens: int = 16000) -> str:
+    """
+    Call Claude API with smart token allocation.
+    max_tokens is LIMIT not CHARGE — only pay for what's actually generated.
+    Max safe limit = 21,333 (above this, streaming is required).
+    """
     try:
         api_messages = []
 
@@ -203,6 +209,10 @@ def parse_multi_file_response(reply: str) -> dict:
 
 
 def build_full_tc_context(test_cases: list) -> str:
+    """
+    Build FULL test case context (titles + steps + expected)
+    for passing to Selenium and BDD generators.
+    """
     if not test_cases:
         return ""
 
@@ -388,6 +398,14 @@ NAVIGATION FLOWS — USE THESE FOR INTERMEDIATE STEPS
   1. Click "Orders" (Bestellungen) from top menu
   2. Order Status page opens ("Order Overview" heading)
   (see ORDER STATUS sections below for full page details)
+
+▶ TO REACH FILE SHARING ("Sales support") PAGE:
+  1. URL pattern: /de-de/b2b/file-sharing/
+  ⚠️ NOTE: Exact top-menu click path to reach this page has NOT been 
+     confirmed yet. Use generic phrasing "Navigate to the Sales support / 
+     File sharing page" in test cases unless the AC/ticket specifies 
+     the exact menu path.
+  (see FILE SHARING section below for full page details)
 
 ═══════════════════════════════════════════════════════
 🔥 ALTERNATIVE PRODUCTS LOGIC — CRITICAL (PDP) — UPDATED
@@ -608,7 +626,7 @@ NEW ALTERNATIVE PLP SHOWS:
   - Sort order should remain consistent during the session
 
 ═══════════════════════════════════════════════════════
-📦 ORDER STATUS — DETAILS PAGE — NEW
+📦 ORDER STATUS — DETAILS PAGE — UPDATED
 ═══════════════════════════════════════════════════════
 
 ▶ HOW TO REACH:
@@ -624,12 +642,14 @@ NEW ALTERNATIVE PLP SHOWS:
   1. Heading: "Order #[order number]"
   2. "Reference Store" — dropdown, READ-ONLY (displays store name + full 
      address; cannot be edited/changed on this page)
-  3. Three info labels shown side by side:
+  3. Info labels shown side by side:
      - "Delivery Address Label" — full structured address (name, street, 
        postal code, city, country code)
      - "Customer Purchase Order ID Label" — the PO ID entered at checkout 
        for this order
      - "Order Date Label" — the date the order was originally placed
+     - "Delivery Instructions" label — free text entered at checkout, 
+       shown here read-only (e.g., "testing 99999")
   4. "RequestedDeliveryDate" field (display only) + "Partial delivery" 
      checkbox (right-aligned, reflects whether partial delivery was chosen)
   5. Product line card (one per line item), showing:
@@ -640,7 +660,8 @@ NEW ALTERNATIVE PLP SHOWS:
      - "Confirmed Quantity: [X]"
      - "Estimated Delivery: [date]"
      - "Line Status: [status]" (e.g. "Offen" = open)
-     - "Line Price: [price] €"
+     - 🚨 "Line Price: [price] €" — CLICKABLE, opens Detailed Price 
+       Information panel (see dedicated section below)
      - "Invoice Number: -" (shows "-" if not yet invoiced)
      - "Delivery Note: -"
      - "Shipping Number: -"
@@ -655,10 +676,173 @@ NEW ALTERNATIVE PLP SHOWS:
 
 ▶ KEY RULES:
   - "Reference Store" is ALWAYS non-editable on this page
-  - This ENTIRE page is READ-ONLY — it's a summary/details view, 
-    NOT an edit form (no Save/Submit actions on this page itself)
+  - This page is a READ-ONLY summary/details view — EXCEPT for the 
+    "Line Price" value, which is clickable and opens the Detailed 
+    Price Information panel (no other edit actions on this page itself)
   - All monetary values follow German format: "1.643,00 €" 
     (dot = thousands separator, comma = decimal separator)
+
+═══════════════════════════════════════════════════════
+💰 ORDER STATUS DETAILS — DETAILED PRICE INFORMATION PANEL — NEW
+═══════════════════════════════════════════════════════
+
+▶ HOW TO REACH:
+  - On the Order Status Details page, click the "Line Price" VALUE 
+    (e.g., "12,00 €") on any order line
+  - Opens a "Detailed price information" panel ANCHORED to the RIGHT 
+    edge of the screen (side panel / drawer, does NOT navigate to a new URL)
+
+▶ BACKGROUND BEHAVIOR WHILE PANEL IS OPEN:
+  - The Order Status Details page behind the panel remains VISIBLE 
+    but becomes NON-INTERACTIVE (dimmed/greyed, disabled) until the 
+    panel is closed
+
+▶ PANEL LAYOUT (top to bottom):
+  1. Title: "Detailed price information" + close "X" icon in the 
+     top-right corner of the panel
+  2. "Price details" section — fields displayed in this EXACT order:
+     - Product (e.g., "No Brand TR1LFSTV 944189355")
+     - Quantity (e.g., "2")
+     - Transfer Price (e.g., "12,00 €")
+     - Net Unit (Net Unit Price) (e.g., "12,00 €")
+     - "Total Price Per Line" with an "Ex. VAT" caption underneath 
+       (e.g., "24,00 €")
+  3. "Discount" section:
+     - Each discount shown as a separate row: discount name, 
+       discount percentage, discount amount (in line currency)
+     - 🚨 PER TICKET AC: if NO discount applies, this section should 
+       NOT be displayed at all
+     - ⚠️ DISCREPANCY NOTE: current build screenshot shows this section 
+       IS displayed with "No Discounts" placeholder text even when 
+       there are no discounts — this conflicts with the AC. Treat the 
+       AC (hide when empty) as the intended/correct behavior for test 
+       case expected results, but flag this to the team for 
+       clarification before final sign-off.
+  4. "Other" / "Other charges" section:
+     - Each charge shown as a separate row: charge name, percentage, 
+       amount — listed in system-configured order
+     - 🚨 PER TICKET AC: if NO other charges apply, this section 
+       should NOT be displayed at all
+     - ⚠️ DISCREPANCY NOTE: current build screenshot shows "No charges" 
+       placeholder text even when empty — same discrepancy as the 
+       Discount section above
+  5. "Total" section:
+     - VAT — shows percentage AND amount together (e.g., "19,00%" and "4,56 €")
+     - "Total Price Per Line" with "Ex. VAT" caption (e.g., "24,00 €")
+  6. Bottom action buttons: "Close" (outlined, left) | "Print" (red, right)
+
+▶ 🚨 RECONCILIATION RULE:
+  - Total Price Per Line = (Net Unit Price × Quantity) − Discounts + 
+    Other charges
+
+▶ 🚨 SINGLE-LINE SCOPE RULE:
+  - The panel shows pricing information ONLY for the order line it 
+    was triggered from
+  - To view another line's price details: user MUST close the current 
+    panel first, then click that OTHER line's "Line Price" value
+  - There is NO way to switch to a different line while the panel 
+    stays open
+
+▶ 🚨 PRINT BUTTON BEHAVIOR:
+  - Clicking "Print" triggers the browser/device's native print dialog
+  - Print output MUST include the FULL content: Price details, 
+    Discount, Other charges, and Total sections
+  - Print output MUST EXCLUDE: the "Close" button, "Print" button, 
+    the "X" icon, and any background/order-page content
+
+▶ 🚨 CLOSE BEHAVIOR:
+  - Clicking the "Close" button (bottom) OR the "X" icon (top-right) 
+    → closes the panel
+  - User is returned to the full Order Status Details view with ALL 
+    interactions restored (background becomes interactive again)
+
+▶ KEY ELEMENT NAMES (Detailed Price Panel):
+  - "Detailed price information" (panel title)
+  - "Price details" / "Discount" / "Other" / "Total" (section headings)
+  - "Product" / "Quantity" / "Transfer Price" / "Net Unit" / 
+    "Total Price Per Line" (Price details fields)
+  - "Ex. VAT" (caption under Total Price Per Line)
+  - "Close" / "Print" (action buttons)
+
+═══════════════════════════════════════════════════════
+📁 FILE SHARING PAGE ("Sales support") — NEW
+═══════════════════════════════════════════════════════
+
+▶ HOW TO REACH:
+  - URL pattern: /de-de/b2b/file-sharing/
+  - Page heading: "Sales support"
+  - Subtext: "This page allows B2B users to securely access, search, 
+    and download shared files. Use the search and filter options to 
+    quickly find the documents you need."
+  ⚠️ NOTE: exact top-menu click path not yet confirmed by user — use 
+     generic phrasing in test cases unless AC specifies the menu path.
+
+▶ PAGE STRUCTURE:
+  - Two root-level tabs: "Guides & Manuals" | "Price Lists"
+  - Each tab shows folder tiles (e.g., "Manuals", "Guides", "Pictures" 
+    under Guides & Manuals; "PriceList_SubFolder1", 
+    "PriceList_SubFolder2" under Price Lists)
+  - Each folder tile shows: folder icon, folder name, file count, 
+    total size (e.g., "Manuals — 2 files — 924.3KB")
+  - Clicking a folder → navigates INTO it, shows a breadcrumb 
+    (e.g., "↑ Price Lists > PriceList_SubFolder1")
+  - Breadcrumb "↑" (up arrow) + root label navigates back up one level
+  - Inside a folder: individual FILES are shown as tiles with:
+     * File icon (document icon)
+     * File name + extension (e.g., "Price List1.xlsx")
+     * Upload/modified date (e.g., "June 25, 2026")
+     * File size (e.g., "9.5KB")
+     * Individual ⬇️ (download) icon — right-aligned on the tile
+
+▶ 🚨 DOWNLOAD BEHAVIOR (per AC):
+  - Clicking the ⬇️ download icon on a file tile downloads THAT file 
+    individually (NOT the whole folder)
+  - Downloaded file name + extension MUST match the displayed file 
+    name exactly
+  - Browser's default download functionality manages download 
+    progress/status — no custom in-app progress UI
+  - Download URL is customer-specific and EXPIRES at the end of the day
+     * If another customer accesses the same link → basic access error
+     * If accessed after expiry → basic access error
+
+▶ 🚨 SEARCH BEHAVIOR (per AC):
+  - Search input field (placeholder text) + 🔍 search icon/button
+     * Search icon/button is ENABLED only when the input is non-empty
+  - Executing search (click 🔍 OR press Enter):
+     * Searches across ALL root-level tabs (Guides & Manuals, 
+       Price Lists, and any others like Marketing)
+     * Each tab shows a result COUNT next to its name, e.g., 
+       "Guides & Manuals (8)"
+     * Tabs with 0 results become DISABLED
+     * The current folder/breadcrumb view is HIDDEN; a "results view" 
+       replaces it
+  - Results header format: `Showing <N> results for "<query>"`
+     * N MUST equal the actual count of result tiles rendered
+  - Result tiles show the same metadata as normal file tiles: file 
+    name, date, size — download icon remains visible and functional
+  - NO RESULTS state: header shows `Showing 0 results for "<query>"` 
+    + a clear, accessible "No results" message + NO tiles rendered
+  - "Clear search" control (text link + X icon, shown ONLY when a 
+    query is active):
+     * Clicking it clears the query, hides the results view, and 
+       returns to the FIRST root category (same state as initial page load)
+  - Input behavior:
+     * Retains the last SUBMITTED query while results are shown
+     * Editing the input does NOT auto-update results — user must 
+       re-click the search icon or press Enter to re-search
+     * Pressing Enter triggers the SAME behavior as clicking the 
+       search icon/button
+  - ⚠️ Error handling (network failure during search) is currently 
+    STRUCK-THROUGH / descoped in the ticket — do NOT generate test 
+    cases for this scenario unless the AC is un-struck/reinstated
+
+▶ KEY ELEMENT NAMES (File Sharing):
+  - "Sales support" (page heading)
+  - "Guides & Manuals" / "Price Lists" (root tabs)
+  - Download icon ⬇️ (per file, individual download)
+  - Search input (placeholder text) + 🔍 icon
+  - "Showing <N> results for '<query>'" (results header)
+  - "Clear search" (text link + X icon)
 
 ═══════════════════════════════════════════════════════
 🛒 CHECKOUT (DELIVERY) PAGE — DEEP DIVE — UPDATED
@@ -1028,6 +1212,9 @@ KEY ELEMENT NAMES (use these exactly in test cases)
   - "Update list" / "Download as Excel" / "Send as e-mail" (Order Status actions)
   - "See full order details" (Order Status expand-row link)
   - "Reference Store" (Order Status Details, read-only)
+  - "Detailed price information" (side panel title, from clicking Line Price)
+  - "Sales support" (File Sharing page heading)
+  - "Guides & Manuals" / "Price Lists" (File Sharing tabs)
 
 ═══════════════════════════════════════════════════════
 RULES FOR INTERMEDIATE STEPS GENERATION
@@ -1045,6 +1232,9 @@ RULES FOR INTERMEDIATE STEPS GENERATION
 8. 🚨 When dealing with Order Status: distinguish LIST VIEW actions (Update list, Download as Excel, Send as e-mail, See full order details) from DETAILS PAGE content (Reference Store read-only, product line cards, Price summary) — they are TWO SEPARATE PAGES
 9. 🚨 When dealing with new Checkout "Add product" feature: this is DIFFERENT from adding a product via PDP "Add to basket-B2B" — it happens directly on the checkout page via PNC/ModelID/EAN field
 10. 🚨 "Place order" button disable logic has TWO independent triggers (missing mandatory fields OR invalid product in cart) — don't conflate them in test cases unless AC covers both
+11. 🚨 Detailed Price Information panel is triggered by clicking the "Line Price" VALUE on the Order Status Details page — it is a side panel, NOT a new page/URL
+12. 🚨 Detailed Price panel Discount/Other sections: AC says HIDE when empty — treat this as the expected result unless AC explicitly says otherwise, even though current build screenshots show placeholder "No Discounts"/"No charges" text
+13. 🚨 File Sharing search results count per tab, disabled tabs with 0 results, and "Clear search" behavior are all DISTINCT rules — don't merge them into one test case unless AC groups them
 """
 
 
@@ -1146,15 +1336,18 @@ When AC mentions alternative products or "Explore alternative products":
    ❌ Don't say Button 3 goes to plain category PLP
 
 ═══════════════════════════════════════════════════════
-🚨 ORDER STATUS — LIST VIEW vs DETAILS PAGE
+🚨 ORDER STATUS — LIST VIEW vs DETAILS PAGE vs PRICE PANEL
 ═══════════════════════════════════════════════════════
 
-When AC mentions Order Status, identify WHICH page:
+When AC mentions Order Status, identify WHICH page/component:
    - "Update list" / "Download as Excel" / "Send as e-mail" / "Confirmed 
      open rows" / "See full order details" → LIST VIEW page
    - "Reference Store" / product line card / "Price summary" on a SINGLE 
      order / "Partial delivery" checkbox → DETAILS PAGE (single order)
-   - Don't mix elements from one page into test steps for the other page
+   - "Line Price" click / "Detailed price information" / "Discount" / 
+     "Other" / "Print" the price breakdown → DETAILED PRICE PANEL 
+     (side panel triggered FROM the Details Page)
+   - Don't mix elements from one page/component into test steps for another
 
 ═══════════════════════════════════════════════════════
 🚨 HOW TO COUNT AC POINTS — DO THIS FIRST
@@ -1250,6 +1443,8 @@ Use ACTUAL Chiron element names:
 - "Reference Product" (label with star icon)
 - "Order Overview", "Update list", "Download as Excel", "See full order details"
 - "Purchase order ID", "Booking required", "Place order"
+- "Detailed price information", "Discount", "Other", "Print", "Close"
+- "Sales support", "Guides & Manuals", "Price Lists"
 
 🔥 FINAL REMINDER:
 - Count AC points FIRST
@@ -1259,7 +1454,7 @@ Use ACTUAL Chiron element names:
 - Complete ALL test cases — never stop midway
 - NEVER put "Step X:" prefix anywhere
 - 🚨 For alternative products: IDENTIFY which button (2 vs 3) — don't mix up!
-- 🚨 For Order Status: IDENTIFY which page (List View vs Details Page) — don't mix up!
+- 🚨 For Order Status: IDENTIFY which page/component (List View vs Details Page vs Price Panel) — don't mix up!
 - 🚨 ZERO DUPLICATES — Each title and scenario must be UNIQUE"""
 
 
@@ -1497,6 +1692,11 @@ def generate_csv(test_cases: list) -> bytes:
 
 
 def generate_excel(test_cases: list) -> bytes:
+    """
+    Generate professional Excel file with formatting.
+    Manager-ready format with headers, borders, colors.
+    Zero token cost — pure Python file generation.
+    """
     wb = Workbook()
     ws = wb.active
     ws.title = "Test Cases"
@@ -1932,7 +2132,7 @@ def handle_generate_tc(ac_text: str, feature: str):
                 "🚨 Title column = ONLY title (NEVER step text). "
                 "🚨 Step column = ONLY plain action sentence. "
                 "🚨 For alternative products: identify WHICH button (Button 2 on PDP vs Button 3 inside component). "
-                "🚨 For Order Status: identify WHICH page (List View vs Details Page). "
+                "🚨 For Order Status: identify WHICH page/component (List View vs Details Page vs Price Panel). "
                 "Complete ALL test cases without stopping."
             ),
             max_tokens=TOKEN_BUDGETS["test_cases"],
@@ -2083,6 +2283,7 @@ def handle_analyze_screenshot(ac_text: str, feature: str):
             system=(
                 "You are a QA expert for AEG Chiron portal. "
                 "🚨 STRICT 1:1 mapping — count AC/UI points, generate AT MOST that many TCs. "
+                "🚨 ZERO DUPLICATES — Each test case title must be UNIQUE. Never rephrase same scenario. "
                 "🚨 ZERO extras, NO 'logically needed' basics. "
                 "Every Title must start with 'Verify whether user is able to' or 'is not able to'. "
                 "Show '📊 AC Analysis: Detected X points'. "

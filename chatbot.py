@@ -75,7 +75,7 @@ defaults = {
     "last_feature": "",
     "last_file_prefix": "",
     "last_action": "",
-    "selected_model": "claude-haiku-4-5",
+    "selected_model": "claude-haiku-4-5-20251001",
     "dl_csv_data": None,
     "dl_csv_filename": "",
     "dl_csv_label": "",
@@ -96,15 +96,14 @@ for k, v in defaults.items():
 
 # ===============================
 # 💰 SMART TOKEN ALLOCATION
-# (Anthropic safe limit = 21,333 — no streaming required)
 # ===============================
 TOKEN_BUDGETS = {
-    "test_cases": 16000,    # CSV usually fits
-    "selenium":   21000,    # MAX safe limit (no streaming needed)
-    "bdd":        21000,    # MAX safe limit (no streaming needed)
-    "screenshot": 16000,    # Vision + test cases
-    "summary":     4000,    # Always small report
-    "free_chat":   8000,    # Conversational
+    "test_cases": 16000,
+    "selenium":   21000,
+    "bdd":        21000,
+    "screenshot": 16000,
+    "summary":     4000,
+    "free_chat":   8000,
 }
 
 
@@ -135,11 +134,6 @@ def sanitize_messages(messages: list) -> list:
 
 
 def call_claude(messages: list, system: str = "", images: list = None, max_tokens: int = 16000) -> str:
-    """
-    Call Claude API with smart token allocation.
-    max_tokens is LIMIT not CHARGE — only pay for what's actually generated.
-    Max safe limit = 21,333 (above this, streaming is required).
-    """
     try:
         api_messages = []
 
@@ -173,7 +167,7 @@ def call_claude(messages: list, system: str = "", images: list = None, max_token
             return "❌ No valid messages to send."
 
         response = client.messages.create(
-            model=st.session_state.get("selected_model", "claude-haiku-4-5"),
+            model=st.session_state.get("selected_model", "claude-haiku-4-5-20251001"),
             max_tokens=max_tokens,
             system=system if system else "You are a helpful assistant.",
             messages=api_messages,
@@ -209,10 +203,6 @@ def parse_multi_file_response(reply: str) -> dict:
 
 
 def build_full_tc_context(test_cases: list) -> str:
-    """
-    Build FULL test case context (titles + steps + expected)
-    for passing to Selenium and BDD generators.
-    """
     if not test_cases:
         return ""
 
@@ -372,7 +362,7 @@ NAVIGATION FLOWS — USE THESE FOR INTERMEDIATE STEPS
   6. Review Products list with quantities
   7. Review Price summary (Total amount, Discount, VAT, Total)
   8. Tick "Send order confirmation via email" + verify email
-  9. Click submit/place order
+  9. Click "Place order" (only enabled once all mandatory fields are filled)
 
 ▶ TO USE WISHLIST:
   1. Click Wishlist icon ❤️ (heart icon, top right)
@@ -393,6 +383,11 @@ NAVIGATION FLOWS — USE THESE FOR INTERMEDIATE STEPS
 ▶ TO COMPARE PRODUCTS:
   1. On PLP, click "Compare Products" button on product card (max 3 products)
   2. Click compare button to view comparison
+
+▶ TO REACH ORDER STATUS PAGE:
+  1. Click "Orders" (Bestellungen) from top menu
+  2. Order Status page opens ("Order Overview" heading)
+  (see ORDER STATUS sections below for full page details)
 
 ═══════════════════════════════════════════════════════
 🔥 ALTERNATIVE PRODUCTS LOGIC — CRITICAL (PDP) — UPDATED
@@ -495,7 +490,7 @@ NEW ALTERNATIVE PLP SHOWS:
    - URL pattern: /category/?viewAlternatives=PNC
 
 ═══════════════════════════════════════════════════════
-🔥 CRITICAL SUMMARY TABLE
+🔥 CRITICAL SUMMARY TABLE (ALTERNATIVE PRODUCTS)
 ═══════════════════════════════════════════════════════
 
 ┌──────────────────────────────────────────────────────────────────┐
@@ -517,7 +512,7 @@ NEW ALTERNATIVE PLP SHOWS:
 └──────────────────────────────────────────────────────────────────┘
 
 ═══════════════════════════════════════════════════════
-🚨 CRITICAL RULES FOR TEST CASE GENERATION
+🚨 CRITICAL RULES — ALTERNATIVE PRODUCTS TEST CASE GENERATION
 ═══════════════════════════════════════════════════════
 
 1. NEVER assume both Button 1 and Button 2 appear together on PDP
@@ -558,9 +553,115 @@ NEW ALTERNATIVE PLP SHOWS:
 ▶ TO REACH ORDERS:
   1. Click "Orders" from top menu
   2. Mega menu shows: Job Status | Order search | Direct order | Contact us
+  (Order Status page — see dedicated section below)
 
 ═══════════════════════════════════════════════════════
-🛒 CHECKOUT (DELIVERY) PAGE — DEEP DIVE
+📦 ORDER STATUS — LIST VIEW — NEW
+═══════════════════════════════════════════════════════
+
+▶ HOW TO REACH:
+  - Click "Orders" (Bestellungen) from top menu → Order Status page opens
+  - URL pattern: /de-de/b2b/order-status-v2/
+  - Page heading: "Order Overview"
+  - Subtext: "Here you can see all your open orders and search for them."
+
+▶ PAGE TABS:
+  - "Order overview" (default active tab)
+  - "Order search"
+
+▶ TABLE COLUMNS (each has sort arrows ↕, all sortable):
+  Status | Order marking | Order number | Order date | Req date | Order type | Order lines
+
+▶ STATUS COLUMN:
+  - Shown as colored dot + text label (e.g. green dot + "Confirmed")
+  - Must be visually distinct so user instantly knows order state
+
+▶ "ORDER LINES" COLUMN:
+  - Shows a red pill with count (e.g. "1 lines")
+  - Has expand/collapse chevron (⌄ collapsed / ⌃ expanded) next to the pill
+
+▶ EXPANDING A ROW (click chevron):
+  - Reveals a Line-level sub-table directly below that row with columns:
+    Line status | Product no | Model no | Requested Qty | Confirmed Qty | Estimated delivery
+  - Below the sub-table (right-aligned): "→ See full order details" link
+
+▶ "SEE FULL ORDER DETAILS" LINK:
+  - Click → redirects to Order Status Details page for THAT specific order
+  - URL pattern: /de-de/b2b/order-status-v2/order-status-detail-page/?orderId=[order number]
+
+▶ BOTTOM ACTION BAR (sticky, always visible while scrolling):
+  - "Update list" button (left, with refresh icon):
+     * Click → refetches order data from backend
+     * Table rows AND "Confirmed open rows: X" counter update after refresh
+     * Should show a loading indicator while refreshing
+  - "Confirmed open rows: [count]" — live counter next to Update list button
+  - "Download as Excel" button (right):
+     * Downloads the order list view — ALL visible orders with their 
+       product line details — as an Excel file
+  - "Send as e-mail" button (right):
+     * Sends the current list view data via email
+     * User can enter an email address to receive the export
+
+▶ SORTING RULE:
+  - User can sort by: status, order marking, order number, order date, 
+    requested date, order type
+  - Sort order should remain consistent during the session
+
+═══════════════════════════════════════════════════════
+📦 ORDER STATUS — DETAILS PAGE — NEW
+═══════════════════════════════════════════════════════
+
+▶ HOW TO REACH:
+  - From Order Status list view (Order Overview), click 
+    "See full order details" on any expanded order row
+  - URL pattern: /de-de/b2b/order-status-v2/order-status-detail-page/?orderId=[orderId]
+
+▶ BREADCRUMB:
+  - "↑ Order Overview  >  Order #[order number]"
+  - "Order Overview" is clickable and navigates back to the list view
+
+▶ PAGE LAYOUT (top to bottom):
+  1. Heading: "Order #[order number]"
+  2. "Reference Store" — dropdown, READ-ONLY (displays store name + full 
+     address; cannot be edited/changed on this page)
+  3. Three info labels shown side by side:
+     - "Delivery Address Label" — full structured address (name, street, 
+       postal code, city, country code)
+     - "Customer Purchase Order ID Label" — the PO ID entered at checkout 
+       for this order
+     - "Order Date Label" — the date the order was originally placed
+  4. "RequestedDeliveryDate" field (display only) + "Partial delivery" 
+     checkbox (right-aligned, reflects whether partial delivery was chosen)
+  5. Product line card (one per line item), showing:
+     - Product image (thumbnail)
+     - Model no + "PNC [number]"
+     - "Requested quantity: [X]"
+     - "Unit Price Label: [price] €"
+     - "Confirmed Quantity: [X]"
+     - "Estimated Delivery: [date]"
+     - "Line Status: [status]" (e.g. "Offen" = open)
+     - "Line Price: [price] €"
+     - "Invoice Number: -" (shows "-" if not yet invoiced)
+     - "Delivery Note: -"
+     - "Shipping Number: -"
+     - "Line Marking: -"
+  6. "Price summary" section (below product lines):
+     - "Products" — count of products
+     - "Betrag exkl. MwSt" (amount excluding VAT)
+     - "Gesamtbetrag" (total gross amount)
+     - "Skonto" (cash discount)
+     - "VAT (19,00%)" — shows both percentage AND value
+     - "Total" (bold, large font) + "VAT excluded" caption below it
+
+▶ KEY RULES:
+  - "Reference Store" is ALWAYS non-editable on this page
+  - This ENTIRE page is READ-ONLY — it's a summary/details view, 
+    NOT an edit form (no Save/Submit actions on this page itself)
+  - All monetary values follow German format: "1.643,00 €" 
+    (dot = thousands separator, comma = decimal separator)
+
+═══════════════════════════════════════════════════════
+🛒 CHECKOUT (DELIVERY) PAGE — DEEP DIVE — UPDATED
 ═══════════════════════════════════════════════════════
 
 ▶ HOW TO REACH:
@@ -582,8 +683,12 @@ Contains (in order):
   a) Purchase order ID — text field, placeholder "e.g 123 456 789 (reference ID)"
   b) Selected store — dropdown (e.g., "70060121 Möbelland Hochtaunus GmbH...")
   c) Delivery options — radio buttons (single-select)
-  d) Requested delivery date — calendar picker
-  e) Delivery instructions — expandable text area
+  d) 🆕 "Booking required" — checkbox with ℹ️ info icon, CHECKED by default 
+     (pink/red checked state), positioned right after Delivery options
+  e) Shipment — radio buttons: "Partial delivery" / "Complete order delivery" 
+     ("Complete order delivery" selected by default)
+  f) Requested delivery date — calendar picker/text field (format DD/MM/YYYY)
+  g) Delivery instructions — expandable text area
 
 DELIVERY OPTIONS — radio buttons (single-select):
    ⚪ Alternative delivery address
@@ -657,7 +762,7 @@ DELIVERY INSTRUCTIONS:
   - Optional field
 
 ═══════════════════════════════════════════════════════
-SECTION 2: PRODUCTS
+SECTION 2: PRODUCTS — UPDATED
 ═══════════════════════════════════════════════════════
 
 EMPTY CART STATE:
@@ -665,17 +770,48 @@ EMPTY CART STATE:
 
 LINE ITEM LAYOUT (per product, in this exact order):
   - Thumbnail (small product image, click → opens PDP in NEW tab)
-  - Model ID (e.g., "HK857870IB")
-  - PNC (e.g., "PNC 949 598 123")
+  - Model ID (e.g., "BSK999230T")
+  - PNC (e.g., "PNC 944 188 453")
   - Product Title (click → opens PDP in NEW tab)
   - Trash icon 🗑️ (delete this line item)
   - Quantity controls: [-] [number input] [+]
-  - Unit Price (e.g., "7.650,00 €")
-  - Line Price (e.g., "7.650,00 €")
+  - Unit Price (e.g., "1.643,00 €")
+  - Line Price (e.g., "1.643,00 €")
+  - 🆕 "View detailed price" link (below Unit/Line Price) — click opens a 
+    detailed price breakdown for that specific product
 
-BELOW EACH PRODUCT (gray info box):
+BELOW EACH PRODUCT LINE (gray info box):
   - Quantity: X
-  - Estimated Delivery: [Month Day, Year] (e.g., "May 11, 2026")
+  - Estimated Delivery: [Month Day, Year] (e.g., "24/08/2026")
+  - 🆕 "Expected price" field — text input, placeholder "Placeholder", with ℹ️ icon
+  - 🆕 "Motivation" field — text input, placeholder "Placeholder", with ℹ️ icon
+
+🆕 PER-PRODUCT ADD-ON SERVICES (checkboxes with per-unit prices):
+  - Shown as a row of checkbox options below the gray info box, e.g.:
+     * SPEDITIONSLIEFERUNG — price "per unit" (e.g. 59,99 €)
+     * ALTGERÄTEMITNAHME — price "per unit" (e.g. 19,00 €)
+     * ALTGERÄTEAUSBAU/-MITNAHME — price "per unit" (e.g. 96,00 €)
+  - Exact service names/prices vary per product/market — treat generically 
+    as "add-on service checkboxes" in test cases unless AC specifies names
+  - Checking a service adds its price to that line's total
+
+🆕 "ADD LINE MARKUP" — expandable dropdown (⌄) shown below the add-on 
+   services for each product line (collapsed by default)
+
+🆕 "ADD PRODUCT" SECTION (completely NEW feature on this checkout page):
+  - Location: below the product list, ABOVE Price summary section
+  - Fields (left to right):
+     * "Enter PNC/ModelID/EAN" — text input field
+     * Quantity stepper: [-] [1] [+]
+     * "Add" button (red, primary)
+     * "Clear cart" button (outlined, right-aligned)
+  - PURPOSE: lets the user add MORE products directly into the checkout 
+    cart WITHOUT navigating back to PLP/PDP
+  - "Add" button: validates the entered PNC/ModelID/EAN, adds it as a 
+    new line item with the specified quantity
+  - "Clear cart" button: removes ALL products from the checkout cart 
+    (empties it entirely) — likely shows a confirmation or reverts to 
+    "cart is empty" state
 
 THUMBNAIL RULES:
   - If image fails to load → default placeholder shown
@@ -775,9 +911,10 @@ SECTION 3: PRICE SUMMARY
 
 NORMAL STATE:
   - Heading: "Price summary"
-  - Shows price breakdown (Total amount, Discount, VAT, etc.)
+  - Shows price breakdown: Products (count) | Betrag exkl. MwSt | 
+    Gesamtbetrag | Skonto | VAT (with %) | Total
   - Currency: EUR (€) for German market
-  - Format: "7.650,00 €" (dot for thousands, comma for decimals)
+  - Format: "1.643,00 €" (dot for thousands, comma for decimals)
 
 ERROR STATE (when invalid items in cart):
   - Message shown: "Price summary can not be loaded with invalid items in cart"
@@ -792,10 +929,28 @@ SECTION 4: CONFIRMATION
 
   - Heading: "Confirmation"
   - Checkbox (red, DEFAULT CHECKED): "Send order confirmation via email to:"
-  - Email field — pre-filled from user profile
-    (e.g., "hamsharubini.udayakumar@electrolux.com")
+  - Email field — pre-filled from user profile, EDITABLE
+    (e.g., "muhammed.najeeb+DE_UAT_adv@electrolux.com")
   - User can EDIT email
   - User can UNCHECK if they don't want confirmation email
+  - "Place order" button (bottom right)
+
+🚨 "PLACE ORDER" BUTTON — ENABLE/DISABLE LOGIC (NEW):
+  - Button starts in a DISABLED state (visually lighter/faded red)
+  - Button becomes ENABLED only once ALL mandatory fields on the page 
+    are filled, specifically:
+     * Purchase order ID (required)
+     * Requested delivery date (required)
+     * Selected store (required — usually pre-filled)
+     * Any other field marked "Mandatory*" on the page (e.g. Alternative 
+       delivery address fields, IF that delivery option is selected)
+  - This "missing mandatory fields" disable rule is SEPARATE from the 
+    "invalid product in cart" disable rule already documented above
+     (Products section → PRODUCT-LEVEL ERROR / WARNING)
+  - Both rules can apply simultaneously: button stays DISABLED if 
+    EITHER condition fails (missing fields OR invalid product)
+  - Once ALL mandatory fields are filled AND no product errors exist 
+    → button becomes fully clickable
 
 ═══════════════════════════════════════════════════════
 ITEM COUNT RULES
@@ -817,6 +972,8 @@ These persist after page refresh AND navigation away/back:
   - Product removals
   - Email confirmation choice
   - Product error/warning states
+  - Booking required checkbox state
+  - Expected price / Motivation field values
 
 ═══════════════════════════════════════════════════════
 ORDER TYPE → SAP MAPPING (for delivery options)
@@ -840,18 +997,24 @@ Trade order        → ZSO / -   / -
 KEY ELEMENT NAMES (use these exactly in test cases)
 ═══════════════════════════════════════════════════════
 
-  - "Delivery" (page heading, NOT "Checkout")
+  - "Delivery" (checkout page heading, NOT "Checkout")
   - "Purchase order ID" (field)
   - "Selected store" (dropdown)
+  - "Booking required" (checkbox)
   - "Delivery options" (radio group)
   - "Alternative delivery address" / "Store delivery" / 
     "Home delivery" / "Home delivery with carry in"
+  - "Partial delivery" / "Complete order delivery" (shipment radio)
   - "Requested delivery date" (calendar)
   - "Delivery instructions" (text area)
   - "Recipient" / "E-mail" / "Phone number" / 
     "Address" / "Zip/Postal code" / "City" (form fields)
   - "Mandatory*" (label for required fields)
   - "Products" (section)
+  - "View detailed price" (per-product link)
+  - "Expected price" / "Motivation" (per-product fields)
+  - "Enter PNC/ModelID/EAN" (Add product field)
+  - "Add" / "Clear cart" (Add product buttons)
   - Trash icon 🗑️ (remove)
   - "+" / "-" buttons (quantity)
   - "Unit Price" / "Line Price" (per product)
@@ -859,6 +1022,12 @@ KEY ELEMENT NAMES (use these exactly in test cases)
   - "Price summary" (section)
   - "Confirmation" (section)
   - "Send order confirmation via email to:" (checkbox)
+  - "Place order" (button)
+  - "Order Overview" (Order Status list page heading)
+  - "Order overview" / "Order search" (Order Status tabs)
+  - "Update list" / "Download as Excel" / "Send as e-mail" (Order Status actions)
+  - "See full order details" (Order Status expand-row link)
+  - "Reference Store" (Order Status Details, read-only)
 
 ═══════════════════════════════════════════════════════
 RULES FOR INTERMEDIATE STEPS GENERATION
@@ -873,6 +1042,9 @@ RULES FOR INTERMEDIATE STEPS GENERATION
 5. NEVER skip intermediate steps
 6. Each step must be ACTIONABLE
 7. 🚨 When dealing with alternative products: ALWAYS check WHICH "Explore alternative products" button (Button 2 on PDP vs Button 3 inside component)
+8. 🚨 When dealing with Order Status: distinguish LIST VIEW actions (Update list, Download as Excel, Send as e-mail, See full order details) from DETAILS PAGE content (Reference Store read-only, product line cards, Price summary) — they are TWO SEPARATE PAGES
+9. 🚨 When dealing with new Checkout "Add product" feature: this is DIFFERENT from adding a product via PDP "Add to basket-B2B" — it happens directly on the checkout page via PNC/ModelID/EAN field
+10. 🚨 "Place order" button disable logic has TWO independent triggers (missing mandatory fields OR invalid product in cart) — don't conflate them in test cases unless AC covers both
 """
 
 
@@ -974,6 +1146,17 @@ When AC mentions alternative products or "Explore alternative products":
    ❌ Don't say Button 3 goes to plain category PLP
 
 ═══════════════════════════════════════════════════════
+🚨 ORDER STATUS — LIST VIEW vs DETAILS PAGE
+═══════════════════════════════════════════════════════
+
+When AC mentions Order Status, identify WHICH page:
+   - "Update list" / "Download as Excel" / "Send as e-mail" / "Confirmed 
+     open rows" / "See full order details" → LIST VIEW page
+   - "Reference Store" / product line card / "Price summary" on a SINGLE 
+     order / "Partial delivery" checkbox → DETAILS PAGE (single order)
+   - Don't mix elements from one page into test steps for the other page
+
+═══════════════════════════════════════════════════════
 🚨 HOW TO COUNT AC POINTS — DO THIS FIRST
 ═══════════════════════════════════════════════════════
 
@@ -1065,6 +1248,8 @@ Use ACTUAL Chiron element names:
 - "Add to basket-B2B", "View Basket-B2B"
 - "See alternative products", "Explore alternative products"
 - "Reference Product" (label with star icon)
+- "Order Overview", "Update list", "Download as Excel", "See full order details"
+- "Purchase order ID", "Booking required", "Place order"
 
 🔥 FINAL REMINDER:
 - Count AC points FIRST
@@ -1074,6 +1259,7 @@ Use ACTUAL Chiron element names:
 - Complete ALL test cases — never stop midway
 - NEVER put "Step X:" prefix anywhere
 - 🚨 For alternative products: IDENTIFY which button (2 vs 3) — don't mix up!
+- 🚨 For Order Status: IDENTIFY which page (List View vs Details Page) — don't mix up!
 - 🚨 ZERO DUPLICATES — Each title and scenario must be UNIQUE"""
 
 
@@ -1233,7 +1419,6 @@ def parse_test_cases_to_list(raw_text: str) -> list:
                         step = parts[1].strip().strip('"')
                         expected = parts[2].strip().strip('"')
                         actual = parts[3].strip().strip('"') if len(parts) >= 4 else ""
-                        # Clean up "Step X:" prefix if AI accidentally added it
                         import re
                         title = re.sub(r'^Step\s+\d+\s*:?\s*', '', title, flags=re.IGNORECASE).strip()
                         step = re.sub(r'^Step\s+\d+\s*:?\s*', '', step, flags=re.IGNORECASE).strip()
@@ -1312,20 +1497,13 @@ def generate_csv(test_cases: list) -> bytes:
 
 
 def generate_excel(test_cases: list) -> bytes:
-    """
-    Generate professional Excel file with formatting.
-    Manager-ready format with headers, borders, colors.
-    Zero token cost — pure Python file generation.
-    """
     wb = Workbook()
     ws = wb.active
     ws.title = "Test Cases"
-    
-    # Headers
+
     headers = ["Test Case Title", "Steps to Reproduce", "Expected Result", "Actual Result", "Status"]
     ws.append(headers)
-    
-    # Style headers — Blue background, white bold text
+
     header_font = Font(name="Arial", size=11, bold=True, color="FFFFFF")
     header_fill = PatternFill("solid", start_color="1F4E78")
     header_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
@@ -1335,59 +1513,51 @@ def generate_excel(test_cases: list) -> bytes:
         top=Side(style="thin"),
         bottom=Side(style="thin"),
     )
-    
+
     for col in range(1, 6):
         cell = ws.cell(row=1, column=col)
         cell.font = header_font
         cell.fill = header_fill
         cell.alignment = header_align
         cell.border = thin_border
-    
-    # Data styling
+
     data_font = Font(name="Arial", size=10)
-    title_fill = PatternFill("solid", start_color="E7F3FF")  # Light blue for title rows
+    title_fill = PatternFill("solid", start_color="E7F3FF")
     data_align = Alignment(wrap_text=True, vertical="top")
-    
-    # Write data rows
+
     prev_title = ""
     row_num = 2
     for tc in test_cases:
         current_title = tc.get("Test Case Title", "")
         is_first_row_of_tc = current_title != prev_title
-        
-        # Title only on first row of each TC, blank for continuation
+
         title_value = current_title if is_first_row_of_tc else ""
-        
+
         ws.cell(row=row_num, column=1, value=title_value)
         ws.cell(row=row_num, column=2, value=tc.get("Steps to Reproduce", ""))
         ws.cell(row=row_num, column=3, value=tc.get("Expected Result", ""))
         ws.cell(row=row_num, column=4, value=tc.get("Actual Result", ""))
         ws.cell(row=row_num, column=5, value=tc.get("Status", "Not Executed"))
-        
-        # Apply styling
+
         for col in range(1, 6):
             cell = ws.cell(row=row_num, column=col)
             cell.font = data_font
             cell.alignment = data_align
             cell.border = thin_border
-            # Highlight title rows (first row of each test case)
             if is_first_row_of_tc:
                 cell.fill = title_fill
-        
+
         prev_title = current_title
         row_num += 1
-    
-    # Set column widths (professional sizing)
-    ws.column_dimensions["A"].width = 55  # Title
-    ws.column_dimensions["B"].width = 60  # Steps
-    ws.column_dimensions["C"].width = 55  # Expected
-    ws.column_dimensions["D"].width = 55  # Actual
-    ws.column_dimensions["E"].width = 15  # Status
-    
-    # Freeze top row (header stays when scrolling)
+
+    ws.column_dimensions["A"].width = 55
+    ws.column_dimensions["B"].width = 60
+    ws.column_dimensions["C"].width = 55
+    ws.column_dimensions["D"].width = 55
+    ws.column_dimensions["E"].width = 15
+
     ws.freeze_panes = "A2"
-    
-    # Save to bytes
+
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
@@ -1433,8 +1603,7 @@ def render_block(block: dict, idx: int):
                 f"✅ {len(unique_titles)} test cases generated! "
                 "Download in Excel or CSV format below."
             )
-            
-            # Two download buttons side by side
+
             col_excel, col_csv = st.columns(2)
             with col_excel:
                 st.download_button(
@@ -1455,7 +1624,7 @@ def render_block(block: dict, idx: int):
                     key=f"dl_csv_{idx}",
                     use_container_width=True,
                 )
-            
+
             render_dashboard(block["dashboard"], block["feature"])
 
     elif btype == "selenium_result":
@@ -1551,7 +1720,6 @@ def render_all_blocks():
 st.sidebar.markdown("## 🧪 QA Assistant")
 st.sidebar.success("🌐 Chiron Website Knowledge: Loaded ✅")
 
-# Show TC link status
 if st.session_state.last_test_cases:
     unique_count = len(set(tc["Test Case Title"] for tc in st.session_state.last_test_cases))
     st.sidebar.info(f"🔗 {unique_count} TCs linked to Selenium/BDD")
@@ -1560,19 +1728,18 @@ else:
 
 st.sidebar.markdown("---")
 
-# 🤖 MODEL SELECTOR
 st.sidebar.markdown("### 🤖 Choose AI Model")
 selected_model = st.sidebar.selectbox(
     "Select Model",
     options=[
-        "claude-haiku-4-5",
-        "claude-sonnet-4-5",
-        "claude-opus-4-5",
+        "claude-haiku-4-5-20251001",
+        "claude-sonnet-4-6",
+        "claude-opus-4-8",
     ],
     format_func=lambda x: {
-        "claude-haiku-4-5": "⚡ Haiku 4.5 (Fast)",
-        "claude-sonnet-4-5": "⚖️ Sonnet 4.5 (Balanced)",
-        "claude-opus-4-5": "🧠 Opus 4.5 (Smartest)",
+        "claude-haiku-4-5-20251001": "⚡ Haiku 4.5 (Fast)",
+        "claude-sonnet-4-6": "⚖️ Sonnet 4.6 (Balanced)",
+        "claude-opus-4-8": "🧠 Opus 4.8 (Smartest)",
     }[x],
     index=0,
     label_visibility="collapsed",
@@ -1765,6 +1932,7 @@ def handle_generate_tc(ac_text: str, feature: str):
                 "🚨 Title column = ONLY title (NEVER step text). "
                 "🚨 Step column = ONLY plain action sentence. "
                 "🚨 For alternative products: identify WHICH button (Button 2 on PDP vs Button 3 inside component). "
+                "🚨 For Order Status: identify WHICH page (List View vs Details Page). "
                 "Complete ALL test cases without stopping."
             ),
             max_tokens=TOKEN_BUDGETS["test_cases"],
@@ -1847,7 +2015,7 @@ def handle_generate_selenium(ac_text: str, feature: str):
                 "🚨 You MUST generate ALL 4 FILES — keep code concise but complete. "
                 "Use real Chiron element names. Production ready."
             ),
-            max_tokens=TOKEN_BUDGETS["selenium"],  # 21k = max safe limit
+            max_tokens=TOKEN_BUDGETS["selenium"],
         )
 
     files = parse_multi_file_response(reply)
@@ -1915,7 +2083,6 @@ def handle_analyze_screenshot(ac_text: str, feature: str):
             system=(
                 "You are a QA expert for AEG Chiron portal. "
                 "🚨 STRICT 1:1 mapping — count AC/UI points, generate AT MOST that many TCs. "
-                "🚨 ZERO DUPLICATES — Each test case title must be UNIQUE. Never rephrase same scenario. "
                 "🚨 ZERO extras, NO 'logically needed' basics. "
                 "Every Title must start with 'Verify whether user is able to' or 'is not able to'. "
                 "Show '📊 AC Analysis: Detected X points'. "
@@ -2003,7 +2170,7 @@ def handle_generate_bdd(ac_text: str, feature: str):
                 "Every step in feature file MUST have matching method in StepDefinitions.java. "
                 "Production ready."
             ),
-            max_tokens=TOKEN_BUDGETS["bdd"],  # 21k = max safe limit
+            max_tokens=TOKEN_BUDGETS["bdd"],
         )
 
     files = parse_multi_file_response(reply)

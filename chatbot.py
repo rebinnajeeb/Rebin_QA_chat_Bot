@@ -401,32 +401,39 @@ NAVIGATION FLOWS — USE THESE FOR INTERMEDIATE STEPS
 
 ▶ TO REACH FILE SHARING ("Sales support") PAGE:
   1. URL pattern: /de-de/b2b/file-sharing/
-  ⚠️ NOTE: Exact top-menu click path to reach this page has NOT been 
-     confirmed yet. Use generic phrasing "Navigate to the Sales support / 
-     File sharing page" in test cases unless the AC/ticket specifies 
+  ⚠️ NOTE: Exact top-menu click path to reach this page has NOT been
+     confirmed yet. Use generic phrasing "Navigate to the Sales support /
+     File sharing page" in test cases unless the AC/ticket specifies
      the exact menu path.
   (see FILE SHARING section below for full page details)
+
+▶ TO REACH MEDIA DOWNLOAD CENTRE:
+  1. Click "Tools & Services" from top menu (NOT "Orders" menu)
+  2. Click "Media download centre" option
+  3. Media download page opens ("Media download" heading)
+  - URL pattern: /de-de/b2b/media-download-center-v2/
+  (see MEDIA DOWNLOAD CENTRE section below for full page details)
 
 ═══════════════════════════════════════════════════════
 🔥 ALTERNATIVE PRODUCTS LOGIC — CRITICAL (PDP) — UPDATED
 ═══════════════════════════════════════════════════════
 
 🚨 THERE ARE THREE BUTTONS — DO NOT CONFUSE THEM!
-   Even though TWO buttons have similar names, they are 
+   Even though TWO buttons have similar names, they are
    in DIFFERENT LOCATIONS and have DIFFERENT BEHAVIORS!
 
 TRIGGER CONDITION (For all alternative product buttons on PDP):
    Product status must be one of:
    • "Out of stock-B2B" OR
    • "B2B - Expected to be available from [date]"
-   
+
    ❌ Buttons NEVER appear for in-stock products
 
 ═══════════════════════════════════════════════════════
 🔘 BUTTON 1: "See alternative products" (on PDP)
 ═══════════════════════════════════════════════════════
 
-LOCATION: 
+LOCATION:
    - On PDP page
    - Directly UNDER "Add to basket-B2B" button
    - Has icon: ⇄ (arrows)
@@ -536,13 +543,13 @@ NEW ALTERNATIVE PLP SHOWS:
 1. NEVER assume both Button 1 and Button 2 appear together on PDP
    → Only ONE shows at a time based on alternatives availability
 
-2. When AC mentions "Explore alternative products" — CAREFULLY 
+2. When AC mentions "Explore alternative products" — CAREFULLY
    identify WHICH button:
    → If AC says "on PDP under Add to cart" → Button 2 → goes to OLD PLP
-   → If AC says "inside similar products component" or "top right of component" 
+   → If AC says "inside similar products component" or "top right of component"
      → Button 3 → goes to NEW Alt PLP with filters
 
-3. The NEW Alternative PLP features (filters, reference, 100% match) 
+3. The NEW Alternative PLP features (filters, reference, 100% match)
    ONLY apply to Button 3 (inside component), NOT Button 2 (directly on PDP)
 
 4. "Reference Product" label/star icon appears in:
@@ -582,10 +589,12 @@ NEW ALTERNATIVE PLP SHOWS:
   - URL pattern: /de-de/b2b/order-status-v2/
   - Page heading: "Order Overview"
   - Subtext: "Here you can see all your open orders and search for them."
+  - Default active tab: "Order overview" (next to "Order search" tab)
 
 ▶ PAGE TABS:
   - "Order overview" (default active tab)
   - "Order search"
+  (see ORDER STATUS — ORDER SEARCH TAB section below for Order search details)
 
 ▶ TABLE COLUMNS (each has sort arrows ↕, all sortable):
   Status | Order marking | Order number | Order date | Req date | Order type | Order lines
@@ -601,6 +610,8 @@ NEW ALTERNATIVE PLP SHOWS:
 ▶ EXPANDING A ROW (click chevron):
   - Reveals a Line-level sub-table directly below that row with columns:
     Line status | Product no | Model no | Requested Qty | Confirmed Qty | Estimated delivery
+  - 🚨 NO "Shipment no." and NO "Invoice no." columns in Order Overview
+    expanded rows — these appear ONLY in Order Search tab's expanded rows
   - Below the sub-table (right-aligned): "→ See full order details" link
 
 ▶ "SEE FULL ORDER DETAILS" LINK:
@@ -612,25 +623,118 @@ NEW ALTERNATIVE PLP SHOWS:
      * Click → refetches order data from backend
      * Table rows AND "Confirmed open rows: X" counter update after refresh
      * Should show a loading indicator while refreshing
+     * 🚨 NEW: 5-MINUTE COOLDOWN
+        - After clicking Update list, button becomes DISABLED for 5 minutes
+        - If clicked before 5 minutes elapses, shows message:
+          "Data is up to date"
+        - After 5 minutes, button re-enables for next refresh
+  - 🚨 NEW: "Last updated: [DD.MM.YY HH:MM:SS]" timestamp
+     * Shown next to Update list button
+     * Updates after each successful refresh
   - "Confirmed open rows: [count]" — live counter next to Update list button
   - "Download as Excel" button (right):
-     * Downloads the order list view — ALL visible orders with their 
+     * Downloads the order list view — ALL visible orders with their
        product line details — as an Excel file
   - "Send as e-mail" button (right):
      * Sends the current list view data via email
-     * User can enter an email address to receive the export
+     * 🚨 Email is sent to the address configured in the user's
+       "My Account" page (NOT a user-entered email)
 
 ▶ SORTING RULE:
-  - User can sort by: status, order marking, order number, order date, 
+  - User can sort by: status, order marking, order number, order date,
     requested date, order type
   - Sort order should remain consistent during the session
+
+▶ 🚨 BOTTOM BAR BEHAVIOR APPLIES TO BOTH TABS:
+  - All bottom-bar actions (Update list + 5-min cooldown, Last updated
+    timestamp, Confirmed open rows counter, Download as Excel, Send as
+    e-mail) behave the SAME way on both the "Order overview" tab AND
+    the "Order search" tab.
+
+═══════════════════════════════════════════════════════
+🔎 ORDER STATUS — ORDER SEARCH TAB — NEW
+═══════════════════════════════════════════════════════
+
+▶ HOW TO REACH:
+  - From the Order Status page, click "Order search" tab
+    (next to "Order overview" tab)
+  - URL remains the same: /de-de/b2b/order-status-v2/
+  - Page heading changes to: "Order Search"
+  - Subtext: lorem ipsum placeholder text (not final copy)
+
+▶ SEARCH FILTER FIELDS (top row, left to right):
+  1. *Date type — dropdown (default: "Order date") — MANDATORY (*)
+  2. *Search interval — date picker with calendar icon — MANDATORY (*)
+     - Calendar: month view with week numbers (Mon-Sun)
+     - Quick interval buttons below calendar:
+       "Last 7 days" | "Last 14 days" | "Last 30 days"
+     - 🚨 MAXIMUM SEARCH PERIOD: 30 days
+        * Info text displayed: "You can only select a maximum search
+          period of 30 days"
+  3. Reference type — dropdown (default: "Order no.")
+  4. Reference — text input, placeholder "e.g 1234567" + 🔍 icon
+  5. Product — text input, placeholder "EAN, PNC, Mo..."
+     * When text entered, X (clear) icon appears next to 🔍 icon
+  6. Order status — dropdown (default: "Show all")
+  - Top-right of filter row shows "Mandatory*" label
+
+▶ ACTION BUTTONS (right side of filter row):
+  - "Search" button (red, primary) — executes search with current filters
+  - "Clear" button (outlined) — resets all filter fields to defaults
+
+▶ EMPTY STATE (before any search):
+  - Centered 🔍 icon
+  - Heading: "Enter your search query"
+  - Subtext: "Choose between the above filters to find your order"
+
+▶ SEARCH RESULTS TABLE:
+  - Same columns as Order Overview tab:
+    Status | Order marking | Order number | Order date | Req date |
+    Order type | Order lines
+  - Each row expandable via chevron (same behavior as Order Overview)
+  - 🚨 CRITICAL: Expanded rows show MORE columns than Order Overview:
+    Line status | Product no | Model no | Requested Qty | Confirmed Qty |
+    Estimated delivery | Shipment no. | Invoice no.
+    (Order Overview expanded rows do NOT show Shipment no. and Invoice no.
+     — these two columns are EXCLUSIVE to Order Search expanded rows)
+  - "→ See full order details" link below expanded sub-table
+    (same as Order Overview — navigates to Order Status Details page)
+
+▶ NO RESULTS STATE:
+  - If search returns zero matching orders → "No results found" message
+
+▶ 🚨 CRITICAL TAB SWITCHING BEHAVIOR:
+  - If user:
+     1. Performs a search in "Order search" tab (results shown)
+     2. Switches to "Order overview" tab
+     3. Switches BACK to "Order search" tab
+     → Previous search results are CLEARED
+     → Filter fields reset to defaults
+     → Page returns to initial empty state
+     → User must enter filters and click Search again
+  - Search results do NOT persist across tab switches
+
+▶ BOTTOM ACTION BAR (same as Order Overview tab):
+  - "Update list" button with same 5-minute cooldown behavior
+  - "Last updated: [DD.MM.YY HH:MM:SS]" timestamp
+  - "Confirmed open rows: [count]" live counter
+  - "Download as Excel" — downloads current result view as Excel file
+  - "Send as e-mail" — emails current data to address in user's My Account
+
+▶ KEY DISTINCTION RULES:
+  - Order Overview tab (default list of all open orders) and Order Search
+    tab (filter-based search) share the SAME URL but behave differently
+  - Only Order Search has: filter fields, "No results found" state,
+    extra Shipment no. + Invoice no. columns in expanded rows
+  - 5-min Update list cooldown applies to BOTH tabs
+  - Tab switching resets Order Search results
 
 ═══════════════════════════════════════════════════════
 📦 ORDER STATUS — DETAILS PAGE — UPDATED
 ═══════════════════════════════════════════════════════
 
 ▶ HOW TO REACH:
-  - From Order Status list view (Order Overview), click 
+  - From Order Status list view (Order Overview), click
     "See full order details" on any expanded order row
   - URL pattern: /de-de/b2b/order-status-v2/order-status-detail-page/?orderId=[orderId]
 
@@ -640,17 +744,17 @@ NEW ALTERNATIVE PLP SHOWS:
 
 ▶ PAGE LAYOUT (top to bottom):
   1. Heading: "Order #[order number]"
-  2. "Reference Store" — dropdown, READ-ONLY (displays store name + full 
+  2. "Reference Store" — dropdown, READ-ONLY (displays store name + full
      address; cannot be edited/changed on this page)
   3. Info labels shown side by side:
-     - "Delivery Address Label" — full structured address (name, street, 
+     - "Delivery Address Label" — full structured address (name, street,
        postal code, city, country code)
-     - "Customer Purchase Order ID Label" — the PO ID entered at checkout 
+     - "Customer Purchase Order ID Label" — the PO ID entered at checkout
        for this order
      - "Order Date Label" — the date the order was originally placed
-     - "Delivery Instructions" label — free text entered at checkout, 
+     - "Delivery Instructions" label — free text entered at checkout,
        shown here read-only (e.g., "testing 99999")
-  4. "RequestedDeliveryDate" field (display only) + "Partial delivery" 
+  4. "RequestedDeliveryDate" field (display only) + "Partial delivery"
      checkbox (right-aligned, reflects whether partial delivery was chosen)
   5. Product line card (one per line item), showing:
      - Product image (thumbnail)
@@ -660,7 +764,7 @@ NEW ALTERNATIVE PLP SHOWS:
      - "Confirmed Quantity: [X]"
      - "Estimated Delivery: [date]"
      - "Line Status: [status]" (e.g. "Offen" = open)
-     - 🚨 "Line Price: [price] €" — CLICKABLE, opens Detailed Price 
+     - 🚨 "Line Price: [price] €" — CLICKABLE, opens Detailed Price
        Information panel (see dedicated section below)
      - "Invoice Number: -" (shows "-" if not yet invoiced)
      - "Delivery Note: -"
@@ -676,10 +780,10 @@ NEW ALTERNATIVE PLP SHOWS:
 
 ▶ KEY RULES:
   - "Reference Store" is ALWAYS non-editable on this page
-  - This page is a READ-ONLY summary/details view — EXCEPT for the 
-    "Line Price" value, which is clickable and opens the Detailed 
+  - This page is a READ-ONLY summary/details view — EXCEPT for the
+    "Line Price" value, which is clickable and opens the Detailed
     Price Information panel (no other edit actions on this page itself)
-  - All monetary values follow German format: "1.643,00 €" 
+  - All monetary values follow German format: "1.643,00 €"
     (dot = thousands separator, comma = decimal separator)
 
 ═══════════════════════════════════════════════════════
@@ -687,44 +791,44 @@ NEW ALTERNATIVE PLP SHOWS:
 ═══════════════════════════════════════════════════════
 
 ▶ HOW TO REACH:
-  - On the Order Status Details page, click the "Line Price" VALUE 
+  - On the Order Status Details page, click the "Line Price" VALUE
     (e.g., "12,00 €") on any order line
-  - Opens a "Detailed price information" panel ANCHORED to the RIGHT 
+  - Opens a "Detailed price information" panel ANCHORED to the RIGHT
     edge of the screen (side panel / drawer, does NOT navigate to a new URL)
 
 ▶ BACKGROUND BEHAVIOR WHILE PANEL IS OPEN:
-  - The Order Status Details page behind the panel remains VISIBLE 
-    but becomes NON-INTERACTIVE (dimmed/greyed, disabled) until the 
+  - The Order Status Details page behind the panel remains VISIBLE
+    but becomes NON-INTERACTIVE (dimmed/greyed, disabled) until the
     panel is closed
 
 ▶ PANEL LAYOUT (top to bottom):
-  1. Title: "Detailed price information" + close "X" icon in the 
+  1. Title: "Detailed price information" + close "X" icon in the
      top-right corner of the panel
   2. "Price details" section — fields displayed in this EXACT order:
      - Product (e.g., "No Brand TR1LFSTV 944189355")
      - Quantity (e.g., "2")
      - Transfer Price (e.g., "12,00 €")
      - Net Unit (Net Unit Price) (e.g., "12,00 €")
-     - "Total Price Per Line" with an "Ex. VAT" caption underneath 
+     - "Total Price Per Line" with an "Ex. VAT" caption underneath
        (e.g., "24,00 €")
   3. "Discount" section:
-     - Each discount shown as a separate row: discount name, 
+     - Each discount shown as a separate row: discount name,
        discount percentage, discount amount (in line currency)
-     - 🚨 PER TICKET AC: if NO discount applies, this section should 
+     - 🚨 PER TICKET AC: if NO discount applies, this section should
        NOT be displayed at all
-     - ⚠️ DISCREPANCY NOTE: current build screenshot shows this section 
-       IS displayed with "No Discounts" placeholder text even when 
-       there are no discounts — this conflicts with the AC. Treat the 
-       AC (hide when empty) as the intended/correct behavior for test 
-       case expected results, but flag this to the team for 
+     - ⚠️ DISCREPANCY NOTE: current build screenshot shows this section
+       IS displayed with "No Discounts" placeholder text even when
+       there are no discounts — this conflicts with the AC. Treat the
+       AC (hide when empty) as the intended/correct behavior for test
+       case expected results, but flag this to the team for
        clarification before final sign-off.
   4. "Other" / "Other charges" section:
-     - Each charge shown as a separate row: charge name, percentage, 
+     - Each charge shown as a separate row: charge name, percentage,
        amount — listed in system-configured order
-     - 🚨 PER TICKET AC: if NO other charges apply, this section 
+     - 🚨 PER TICKET AC: if NO other charges apply, this section
        should NOT be displayed at all
-     - ⚠️ DISCREPANCY NOTE: current build screenshot shows "No charges" 
-       placeholder text even when empty — same discrepancy as the 
+     - ⚠️ DISCREPANCY NOTE: current build screenshot shows "No charges"
+       placeholder text even when empty — same discrepancy as the
        Discount section above
   5. "Total" section:
      - VAT — shows percentage AND amount together (e.g., "19,00%" and "4,56 €")
@@ -732,34 +836,34 @@ NEW ALTERNATIVE PLP SHOWS:
   6. Bottom action buttons: "Close" (outlined, left) | "Print" (red, right)
 
 ▶ 🚨 RECONCILIATION RULE:
-  - Total Price Per Line = (Net Unit Price × Quantity) − Discounts + 
+  - Total Price Per Line = (Net Unit Price × Quantity) − Discounts +
     Other charges
 
 ▶ 🚨 SINGLE-LINE SCOPE RULE:
-  - The panel shows pricing information ONLY for the order line it 
+  - The panel shows pricing information ONLY for the order line it
     was triggered from
-  - To view another line's price details: user MUST close the current 
+  - To view another line's price details: user MUST close the current
     panel first, then click that OTHER line's "Line Price" value
-  - There is NO way to switch to a different line while the panel 
+  - There is NO way to switch to a different line while the panel
     stays open
 
 ▶ 🚨 PRINT BUTTON BEHAVIOR:
   - Clicking "Print" triggers the browser/device's native print dialog
-  - Print output MUST include the FULL content: Price details, 
+  - Print output MUST include the FULL content: Price details,
     Discount, Other charges, and Total sections
-  - Print output MUST EXCLUDE: the "Close" button, "Print" button, 
+  - Print output MUST EXCLUDE: the "Close" button, "Print" button,
     the "X" icon, and any background/order-page content
 
 ▶ 🚨 CLOSE BEHAVIOR:
-  - Clicking the "Close" button (bottom) OR the "X" icon (top-right) 
+  - Clicking the "Close" button (bottom) OR the "X" icon (top-right)
     → closes the panel
-  - User is returned to the full Order Status Details view with ALL 
+  - User is returned to the full Order Status Details view with ALL
     interactions restored (background becomes interactive again)
 
 ▶ KEY ELEMENT NAMES (Detailed Price Panel):
   - "Detailed price information" (panel title)
   - "Price details" / "Discount" / "Other" / "Total" (section headings)
-  - "Product" / "Quantity" / "Transfer Price" / "Net Unit" / 
+  - "Product" / "Quantity" / "Transfer Price" / "Net Unit" /
     "Total Price Per Line" (Price details fields)
   - "Ex. VAT" (caption under Total Price Per Line)
   - "Close" / "Print" (action buttons)
@@ -771,20 +875,20 @@ NEW ALTERNATIVE PLP SHOWS:
 ▶ HOW TO REACH:
   - URL pattern: /de-de/b2b/file-sharing/
   - Page heading: "Sales support"
-  - Subtext: "This page allows B2B users to securely access, search, 
-    and download shared files. Use the search and filter options to 
+  - Subtext: "This page allows B2B users to securely access, search,
+    and download shared files. Use the search and filter options to
     quickly find the documents you need."
-  ⚠️ NOTE: exact top-menu click path not yet confirmed by user — use 
+  ⚠️ NOTE: exact top-menu click path not yet confirmed by user — use
      generic phrasing in test cases unless AC specifies the menu path.
 
 ▶ PAGE STRUCTURE:
   - Two root-level tabs: "Guides & Manuals" | "Price Lists"
-  - Each tab shows folder tiles (e.g., "Manuals", "Guides", "Pictures" 
-    under Guides & Manuals; "PriceList_SubFolder1", 
+  - Each tab shows folder tiles (e.g., "Manuals", "Guides", "Pictures"
+    under Guides & Manuals; "PriceList_SubFolder1",
     "PriceList_SubFolder2" under Price Lists)
-  - Each folder tile shows: folder icon, folder name, file count, 
+  - Each folder tile shows: folder icon, folder name, file count,
     total size (e.g., "Manuals — 2 files — 924.3KB")
-  - Clicking a folder → navigates INTO it, shows a breadcrumb 
+  - Clicking a folder → navigates INTO it, shows a breadcrumb
     (e.g., "↑ Price Lists > PriceList_SubFolder1")
   - Breadcrumb "↑" (up arrow) + root label navigates back up one level
   - Inside a folder: individual FILES are shown as tiles with:
@@ -795,11 +899,11 @@ NEW ALTERNATIVE PLP SHOWS:
      * Individual ⬇️ (download) icon — right-aligned on the tile
 
 ▶ 🚨 DOWNLOAD BEHAVIOR (per AC):
-  - Clicking the ⬇️ download icon on a file tile downloads THAT file 
+  - Clicking the ⬇️ download icon on a file tile downloads THAT file
     individually (NOT the whole folder)
-  - Downloaded file name + extension MUST match the displayed file 
+  - Downloaded file name + extension MUST match the displayed file
     name exactly
-  - Browser's default download functionality manages download 
+  - Browser's default download functionality manages download
     progress/status — no custom in-app progress UI
   - Download URL is customer-specific and EXPIRES at the end of the day
      * If another customer accesses the same link → basic access error
@@ -809,31 +913,31 @@ NEW ALTERNATIVE PLP SHOWS:
   - Search input field (placeholder text) + 🔍 search icon/button
      * Search icon/button is ENABLED only when the input is non-empty
   - Executing search (click 🔍 OR press Enter):
-     * Searches across ALL root-level tabs (Guides & Manuals, 
+     * Searches across ALL root-level tabs (Guides & Manuals,
        Price Lists, and any others like Marketing)
-     * Each tab shows a result COUNT next to its name, e.g., 
+     * Each tab shows a result COUNT next to its name, e.g.,
        "Guides & Manuals (8)"
      * Tabs with 0 results become DISABLED
-     * The current folder/breadcrumb view is HIDDEN; a "results view" 
+     * The current folder/breadcrumb view is HIDDEN; a "results view"
        replaces it
   - Results header format: `Showing <N> results for "<query>"`
      * N MUST equal the actual count of result tiles rendered
-  - Result tiles show the same metadata as normal file tiles: file 
+  - Result tiles show the same metadata as normal file tiles: file
     name, date, size — download icon remains visible and functional
-  - NO RESULTS state: header shows `Showing 0 results for "<query>"` 
+  - NO RESULTS state: header shows `Showing 0 results for "<query>"`
     + a clear, accessible "No results" message + NO tiles rendered
-  - "Clear search" control (text link + X icon, shown ONLY when a 
+  - "Clear search" control (text link + X icon, shown ONLY when a
     query is active):
-     * Clicking it clears the query, hides the results view, and 
+     * Clicking it clears the query, hides the results view, and
        returns to the FIRST root category (same state as initial page load)
   - Input behavior:
      * Retains the last SUBMITTED query while results are shown
-     * Editing the input does NOT auto-update results — user must 
+     * Editing the input does NOT auto-update results — user must
        re-click the search icon or press Enter to re-search
-     * Pressing Enter triggers the SAME behavior as clicking the 
+     * Pressing Enter triggers the SAME behavior as clicking the
        search icon/button
-  - ⚠️ Error handling (network failure during search) is currently 
-    STRUCK-THROUGH / descoped in the ticket — do NOT generate test 
+  - ⚠️ Error handling (network failure during search) is currently
+    STRUCK-THROUGH / descoped in the ticket — do NOT generate test
     cases for this scenario unless the AC is un-struck/reinstated
 
 ▶ KEY ELEMENT NAMES (File Sharing):
@@ -843,6 +947,89 @@ NEW ALTERNATIVE PLP SHOWS:
   - Search input (placeholder text) + 🔍 icon
   - "Showing <N> results for '<query>'" (results header)
   - "Clear search" (text link + X icon)
+
+═══════════════════════════════════════════════════════
+🎞️ MEDIA DOWNLOAD CENTRE — NEW
+═══════════════════════════════════════════════════════
+
+▶ HOW TO REACH:
+  - Click "Tools & Services" from top menu (NOT "Orders" menu)
+  - Click "Media download centre" option
+  - URL pattern: /de-de/b2b/media-download-center-v2/
+  - Page heading: "Media download"
+  - Subtext: "Here you can search and download media files."
+
+▶ PAGE STRUCTURE (top to bottom):
+  1. "Add products" section (gray card at top):
+     - Subtext: "Enter appliance product number (PNC) or use import
+       to find media files."
+     - Top-right of card: "Import from Basket" | "Import from file"
+       action links
+     - Search input field:
+       placeholder "Enter PNC or ModelId e.g. 900001234" + 🔍 search icon
+     - When text entered: X (clear) icon appears next to 🔍 icon
+  2. Below search input: product tags/chips area (visible when products added)
+  3. "Browse assets" section (below Add products card):
+     - When empty: settings/filter icon + "Browse assets" heading +
+       "Add products to start browsing assets" subtext
+     - When products added: shows media files for selected products
+
+▶ 🚨 CRITICAL SEARCH DROPDOWN BEHAVIOR:
+  - User types PNC or Model ID into search input
+  - Dropdown appears ONLY after user types 3 OR MORE characters
+  - Dropdown shows matching products directly below search input
+    (layered panel)
+  - Each dropdown result displays:
+     * Product thumbnail image (left)
+     * Model number (e.g., "ZE115")
+     * PNC number (e.g., "900167792")
+     * Product name with feature description (product title)
+  - MAXIMUM 10 results shown with scroll bar if more matches exist
+  - PARTIAL MATCHES supported (e.g., typing "900" returns all
+    PNCs matching "900")
+  - If NO matches: "no results for [query]" message displayed
+  - Dropdown stays visible while user interacts with it (hover/scroll)
+  - Dropdown closes when focus lost (clicking outside search area)
+
+▶ SEARCH INPUT ICONS:
+  - 🔍 search icon — indicates search functionality
+  - X (clear) icon — appears ONLY when text is entered
+  - Clicking X icon: clears input field AND dismisses dropdown panel
+
+▶ SELECTING A PRODUCT FROM DROPDOWN:
+  - User clicks a product from dropdown
+  - Selected product is ADDED to product list (as tag/chip below search input)
+  - Dropdown CLOSES after selection
+  - Tag/chip format: "[PNC] / [Model ID]" with X remove icon on right
+    Example: "900167792 / ZE115 ×"
+
+▶ PRODUCT TAGS/CHIPS BEHAVIOR:
+  - Multiple products can be added — each shown as SEPARATE tag/chip
+  - Each tag has its own X remove icon → removes THAT ONE product
+  - "Clear all" link appears when 1+ products are added
+     → Clicking "Clear all" removes ALL selected product tags at once
+  - After products added, "Browse assets" section populates with
+    media files available for added products
+
+▶ EMPTY STATE (no products added):
+  - "Browse assets" section shows:
+     * Settings/filter icon (centered)
+     * "Browse assets" heading
+     * "Add products to start browsing assets" subtext
+
+▶ IMPORT OPTIONS (top-right of Add products card):
+  - "Import from Basket" — import products from current basket
+  - "Import from file" — upload file containing product identifiers
+    (PNC/ModelId)
+
+▶ KEY ELEMENT NAMES (Media Download Centre):
+  - "Media download" (page heading)
+  - "Add products" (section heading)
+  - "Enter PNC or ModelId e.g. 900001234" (search placeholder)
+  - 🔍 (search icon) / X (clear icon)
+  - "Import from Basket" / "Import from file" (import links)
+  - "Clear all" (removes all tags)
+  - "Browse assets" (asset section)
 
 ═══════════════════════════════════════════════════════
 🛒 CHECKOUT (DELIVERY) PAGE — DEEP DIVE — UPDATED
@@ -867,9 +1054,9 @@ Contains (in order):
   a) Purchase order ID — text field, placeholder "e.g 123 456 789 (reference ID)"
   b) Selected store — dropdown (e.g., "70060121 Möbelland Hochtaunus GmbH...")
   c) Delivery options — radio buttons (single-select)
-  d) 🆕 "Booking required" — checkbox with ℹ️ info icon, CHECKED by default 
+  d) 🆕 "Booking required" — checkbox with ℹ️ info icon, CHECKED by default
      (pink/red checked state), positioned right after Delivery options
-  e) Shipment — radio buttons: "Partial delivery" / "Complete order delivery" 
+  e) Shipment — radio buttons: "Partial delivery" / "Complete order delivery"
      ("Complete order delivery" selected by default)
   f) Requested delivery date — calendar picker/text field (format DD/MM/YYYY)
   g) Delivery instructions — expandable text area
@@ -886,26 +1073,26 @@ DELIVERY OPTIONS — radio buttons (single-select):
 CURRENT BEHAVIOR (Today):
    - "Alternative delivery address" radio:
      → On selection: inline form panel EXPANDS below
-     → Required fields: Recipient, E-mail, Phone, Address, 
+     → Required fields: Recipient, E-mail, Phone, Address,
        Zip/Postal code, City
-   
+
    - "Store delivery" radio:
      → On selection: NO form expands (currently)
      → Just selects the option, no fields to fill
 
 FUTURE BEHAVIOR (Expected):
-   - "Store delivery" may also expand a form (similar to 
+   - "Store delivery" may also expand a form (similar to
      Alternative delivery address) in upcoming releases
-   - Test cases for current sprint should NOT expect 
+   - Test cases for current sprint should NOT expect
      Store delivery form
-   - Only generate Store delivery form test cases when 
+   - Only generate Store delivery form test cases when
      AC explicitly mentions it
 
 GENERAL RULE:
-   - Switching between radio options: previous selection 
+   - Switching between radio options: previous selection
      collapses (if expanded), new selection shows its panel
-   - Other delivery types (Home delivery, Home delivery 
-     with carry in) follow same pattern with their own 
+   - Other delivery types (Home delivery, Home delivery
+     with carry in) follow same pattern with their own
      specific form fields
 
 ALTERNATIVE DELIVERY ADDRESS form (when radio selected):
@@ -926,7 +1113,7 @@ ALTERNATIVE DELIVERY ADDRESS form (when radio selected):
      - Errors clear automatically when fixed
 
 REQUESTED DELIVERY DATE (Calendar):
-  - Helper text: "This is a requested date that we try to match. 
+  - Helper text: "This is a requested date that we try to match.
                   The confirmed delivery date will be updated on product level."
   - Format: DD/MM/YYYY (German market)
   - Field has X icon (clear) + 📅 icon (open calendar)
@@ -961,7 +1148,7 @@ LINE ITEM LAYOUT (per product, in this exact order):
   - Quantity controls: [-] [number input] [+]
   - Unit Price (e.g., "1.643,00 €")
   - Line Price (e.g., "1.643,00 €")
-  - 🆕 "View detailed price" link (below Unit/Line Price) — click opens a 
+  - 🆕 "View detailed price" link (below Unit/Line Price) — click opens a
     detailed price breakdown for that specific product
 
 BELOW EACH PRODUCT LINE (gray info box):
@@ -975,11 +1162,11 @@ BELOW EACH PRODUCT LINE (gray info box):
      * SPEDITIONSLIEFERUNG — price "per unit" (e.g. 59,99 €)
      * ALTGERÄTEMITNAHME — price "per unit" (e.g. 19,00 €)
      * ALTGERÄTEAUSBAU/-MITNAHME — price "per unit" (e.g. 96,00 €)
-  - Exact service names/prices vary per product/market — treat generically 
+  - Exact service names/prices vary per product/market — treat generically
     as "add-on service checkboxes" in test cases unless AC specifies names
   - Checking a service adds its price to that line's total
 
-🆕 "ADD LINE MARKUP" — expandable dropdown (⌄) shown below the add-on 
+🆕 "ADD LINE MARKUP" — expandable dropdown (⌄) shown below the add-on
    services for each product line (collapsed by default)
 
 🆕 "ADD PRODUCT" SECTION (completely NEW feature on this checkout page):
@@ -989,12 +1176,12 @@ BELOW EACH PRODUCT LINE (gray info box):
      * Quantity stepper: [-] [1] [+]
      * "Add" button (red, primary)
      * "Clear cart" button (outlined, right-aligned)
-  - PURPOSE: lets the user add MORE products directly into the checkout 
+  - PURPOSE: lets the user add MORE products directly into the checkout
     cart WITHOUT navigating back to PLP/PDP
-  - "Add" button: validates the entered PNC/ModelID/EAN, adds it as a 
+  - "Add" button: validates the entered PNC/ModelID/EAN, adds it as a
     new line item with the specified quantity
-  - "Clear cart" button: removes ALL products from the checkout cart 
-    (empties it entirely) — likely shows a confirmation or reverts to 
+  - "Clear cart" button: removes ALL products from the checkout cart
+    (empties it entirely) — likely shows a confirmation or reverts to
     "cart is empty" state
 
 THUMBNAIL RULES:
@@ -1051,7 +1238,7 @@ PRODUCT-LEVEL ERROR / WARNING (Inline):
 
 DISCONTINUED PRODUCT (Successor flow):
   - When product is discontinued AND successor EXISTS:
-     → Inline warning banner: 
+     → Inline warning banner:
         "This product is obsoleted – Replace product with [PNC or model id]"
      → SuccessorID is CLICKABLE link → opens PDP in new tab
      → "Replace product with..." link triggers replacement flow
@@ -1095,7 +1282,7 @@ SECTION 3: PRICE SUMMARY
 
 NORMAL STATE:
   - Heading: "Price summary"
-  - Shows price breakdown: Products (count) | Betrag exkl. MwSt | 
+  - Shows price breakdown: Products (count) | Betrag exkl. MwSt |
     Gesamtbetrag | Skonto | VAT (with %) | Total
   - Currency: EUR (€) for German market
   - Format: "1.643,00 €" (dot for thousands, comma for decimals)
@@ -1121,19 +1308,19 @@ SECTION 4: CONFIRMATION
 
 🚨 "PLACE ORDER" BUTTON — ENABLE/DISABLE LOGIC (NEW):
   - Button starts in a DISABLED state (visually lighter/faded red)
-  - Button becomes ENABLED only once ALL mandatory fields on the page 
+  - Button becomes ENABLED only once ALL mandatory fields on the page
     are filled, specifically:
      * Purchase order ID (required)
      * Requested delivery date (required)
      * Selected store (required — usually pre-filled)
-     * Any other field marked "Mandatory*" on the page (e.g. Alternative 
+     * Any other field marked "Mandatory*" on the page (e.g. Alternative
        delivery address fields, IF that delivery option is selected)
-  - This "missing mandatory fields" disable rule is SEPARATE from the 
+  - This "missing mandatory fields" disable rule is SEPARATE from the
     "invalid product in cart" disable rule already documented above
      (Products section → PRODUCT-LEVEL ERROR / WARNING)
-  - Both rules can apply simultaneously: button stays DISABLED if 
+  - Both rules can apply simultaneously: button stays DISABLED if
     EITHER condition fails (missing fields OR invalid product)
-  - Once ALL mandatory fields are filled AND no product errors exist 
+  - Once ALL mandatory fields are filled AND no product errors exist
     → button becomes fully clickable
 
 ═══════════════════════════════════════════════════════
@@ -1186,12 +1373,12 @@ KEY ELEMENT NAMES (use these exactly in test cases)
   - "Selected store" (dropdown)
   - "Booking required" (checkbox)
   - "Delivery options" (radio group)
-  - "Alternative delivery address" / "Store delivery" / 
+  - "Alternative delivery address" / "Store delivery" /
     "Home delivery" / "Home delivery with carry in"
   - "Partial delivery" / "Complete order delivery" (shipment radio)
   - "Requested delivery date" (calendar)
   - "Delivery instructions" (text area)
-  - "Recipient" / "E-mail" / "Phone number" / 
+  - "Recipient" / "E-mail" / "Phone number" /
     "Address" / "Zip/Postal code" / "City" (form fields)
   - "Mandatory*" (label for required fields)
   - "Products" (section)
@@ -1215,6 +1402,21 @@ KEY ELEMENT NAMES (use these exactly in test cases)
   - "Detailed price information" (side panel title, from clicking Line Price)
   - "Sales support" (File Sharing page heading)
   - "Guides & Manuals" / "Price Lists" (File Sharing tabs)
+  - "Order Search" (search tab heading)
+  - "Date type" / "Search interval" / "Reference type" / "Reference" /
+    "Product" / "Order status" (Order Search filter labels)
+  - "Search" (red button) / "Clear" (reset button) — Order Search
+  - "Last 7 days" / "Last 14 days" / "Last 30 days" (quick intervals)
+  - "No results found" (Order Search empty state)
+  - "Shipment no." / "Invoice no." (Order Search expanded columns)
+  - "Last updated" (timestamp label)
+  - "Confirmed open rows" (counter)
+  - "Media download" (page heading)
+  - "Add products" (section heading)
+  - "Enter PNC or ModelId e.g. 900001234" (placeholder)
+  - "Import from Basket" / "Import from file" (import links)
+  - "Clear all" (removes tags)
+  - "Browse assets" (asset section)
 
 ═══════════════════════════════════════════════════════
 RULES FOR INTERMEDIATE STEPS GENERATION
@@ -1235,6 +1437,11 @@ RULES FOR INTERMEDIATE STEPS GENERATION
 11. 🚨 Detailed Price Information panel is triggered by clicking the "Line Price" VALUE on the Order Status Details page — it is a side panel, NOT a new page/URL
 12. 🚨 Detailed Price panel Discount/Other sections: AC says HIDE when empty — treat this as the expected result unless AC explicitly says otherwise, even though current build screenshots show placeholder "No Discounts"/"No charges" text
 13. 🚨 File Sharing search results count per tab, disabled tabs with 0 results, and "Clear search" behavior are all DISTINCT rules — don't merge them into one test case unless AC groups them
+14. 🚨 Order Search tab is SEPARATE from Order Overview on the SAME URL — distinguish them; only Order Search has filter fields, "No results found" state, and Shipment no. + Invoice no. columns in expanded rows
+15. 🚨 Order Search results RESET when user switches to Order overview tab and comes back to Order search tab
+16. 🚨 "Update list" 5-minute cooldown applies to BOTH Order overview and Order search tabs
+17. 🚨 Media Download Centre is reached via "Tools & Services" menu — NOT via "Orders" menu
+18. 🚨 Media Download Centre search dropdown appears ONLY after 3+ characters typed, shows max 10 results with scroll, and selected products become tags/chips with X remove icon and a "Clear all" option
 """
 
 
@@ -1324,13 +1531,13 @@ When AC mentions alternative products or "Explore alternative products":
 1. CAREFULLY identify WHICH button the AC refers to:
    - Button 2 (on PDP, under Add to cart) → goes to OLD NORMAL PLP
    - Button 3 (inside Similar products component, top right) → goes to NEW Alt PLP
-   
+
 2. Look for CLUES in AC:
    - "from PDP" / "under add to cart" / "directly on product page" → Button 2
-   - "Reference Product" / "pre-selected filters" / "star icon" / 
+   - "Reference Product" / "pre-selected filters" / "star icon" /
      "100% match" / "Start refining your result" → Button 3 (NEW Alt PLP)
    - "after clicking See alternative products" / "from similar products component" → Button 3
-   
+
 3. NEVER mix up Button 2 and Button 3 behaviors:
    ❌ Don't say Button 2 shows reference product or filters
    ❌ Don't say Button 3 goes to plain category PLP
@@ -1340,12 +1547,12 @@ When AC mentions alternative products or "Explore alternative products":
 ═══════════════════════════════════════════════════════
 
 When AC mentions Order Status, identify WHICH page/component:
-   - "Update list" / "Download as Excel" / "Send as e-mail" / "Confirmed 
+   - "Update list" / "Download as Excel" / "Send as e-mail" / "Confirmed
      open rows" / "See full order details" → LIST VIEW page
-   - "Reference Store" / product line card / "Price summary" on a SINGLE 
+   - "Reference Store" / product line card / "Price summary" on a SINGLE
      order / "Partial delivery" checkbox → DETAILS PAGE (single order)
-   - "Line Price" click / "Detailed price information" / "Discount" / 
-     "Other" / "Print" the price breakdown → DETAILED PRICE PANEL 
+   - "Line Price" click / "Detailed price information" / "Discount" /
+     "Other" / "Print" the price breakdown → DETAILED PRICE PANEL
      (side panel triggered FROM the Details Page)
    - Don't mix elements from one page/component into test steps for another
 
@@ -2132,7 +2339,8 @@ def handle_generate_tc(ac_text: str, feature: str):
                 "🚨 Title column = ONLY title (NEVER step text). "
                 "🚨 Step column = ONLY plain action sentence. "
                 "🚨 For alternative products: identify WHICH button (Button 2 on PDP vs Button 3 inside component). "
-                "🚨 For Order Status: identify WHICH page/component (List View vs Details Page vs Price Panel). "
+                "🚨 For Order Status: identify WHICH page/tab/component (Order Overview vs Order Search vs Details Page vs Price Panel). "
+                "🚨 For Media Download Centre: note 3-char minimum for search dropdown, max 10 results, product tags. "
                 "Complete ALL test cases without stopping."
             ),
             max_tokens=TOKEN_BUDGETS["test_cases"],
